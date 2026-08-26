@@ -5,6 +5,7 @@ members = [
     "crates/llm-providers",
     "crates/bridge-core",
     "crates/bridge-server",
+    "crates/codex-runtime",
 ]
 
 [workspace.package]
@@ -16,6 +17,7 @@ license = "MIT"
 alice-protocol = { path = "crates/alice-protocol" }
 llm-providers = { path = "crates/llm-providers" }
 bridge-core = { path = "crates/bridge-core" }
+codex-runtime = { path = "crates/codex-runtime" }
 
 anyhow = "1"
 async-trait = "0.1"
@@ -32,7 +34,7 @@ serde_json = "1"
 sha2 = "0.10"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "migrate", "macros"] }
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "signal"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time", "signal"] }
 toml = "0.8"
 tower = "0.5"
 tracing = "0.1"
