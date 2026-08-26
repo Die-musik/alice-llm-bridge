@@ -8,6 +8,9 @@
 pub mod command;
 mod engine;
 mod error;
+pub mod house_runtime;
+pub mod house_store;
+pub mod household;
 mod mode;
 mod model;
 mod pending;
@@ -20,6 +23,9 @@ pub mod testing;
 
 pub use engine::{Engine, EngineConfig};
 pub use error::{CoreError, Result};
+pub use house_runtime::{HouseRuntime, RuntimeError, RuntimeResult};
+pub use house_store::{HouseholdStore, HouseholdStoreError, StoreResult};
+pub use household::{HouseContext, PendingReply, SurfaceIdentity, SurfaceResolution};
 pub use mode::Mode;
 pub use model::{ModelPreset, ModelRegistry, ModelTier, cost_micros};
 pub use pending::{PendingAnswers, Poll};

@@ -1,6 +1,6 @@
 //! Test support: in-memory fakes shared by unit and integration tests.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -10,6 +10,247 @@ use llm_providers::{ChatCompletion, ChatProvider, ChatRequest, ProviderError, To
 use crate::store::{
     ConversationStore, ExchangeRecord, MessageRole, StoreError, StoredMessage, Summary, UsageStats,
 };
+use crate::{
+    house_store::{HouseholdStore, HouseholdStoreError},
+    household::{HouseContext, PendingReply, SurfaceIdentity, SurfaceResolution},
+};
+
+#[derive(Debug, Default)]
+pub struct MemoryHouseholdStore {
+    household: Mutex<HouseholdInner>,
+}
+
+#[derive(Debug, Default)]
+struct HouseholdInner {
+    houses: HashMap<i64, HouseContext>,
+    members: HashSet<(i64, String)>,
+    surfaces: HashMap<String, (i64, String)>,
+    pending: HashMap<(i64, String), PendingReply>,
+    continuations: HashMap<(i64, String), Vec<String>>,
+}
+
+impl MemoryHouseholdStore {
+    pub fn fixture() -> Self {
+        Self::default()
+    }
+
+    pub fn house(
+        mut self,
+        id: i64,
+        name: &str,
+        codex_thread_id: Option<&str>,
+        homey_connector_id: &str,
+    ) -> Self {
+        self.household
+            .get_mut()
+            .expect("memory store poisoned")
+            .houses
+            .insert(
+                id,
+                HouseContext {
+                    id,
+                    name: name.to_owned(),
+                    codex_thread_id: codex_thread_id.map(str::to_owned),
+                    homey_connector_id: homey_connector_id.to_owned(),
+                },
+            );
+        self
+    }
+
+    pub fn member(mut self, house_id: i64, user_id: &str) -> Self {
+        assert!(
+            self.household
+                .get_mut()
+                .expect("memory store poisoned")
+                .houses
+                .contains_key(&house_id),
+            "member house must exist"
+        );
+        self.household
+            .get_mut()
+            .expect("memory store poisoned")
+            .members
+            .insert((house_id, user_id.to_owned()));
+        self
+    }
+
+    pub fn surface(mut self, house_id: i64, user_id: &str, application_id: &str) -> Self {
+        let inner = self.household.get_mut().expect("memory store poisoned");
+        assert!(
+            inner.members.contains(&(house_id, user_id.to_owned())),
+            "surface member must exist"
+        );
+        let previous = inner
+            .surfaces
+            .insert(application_id.to_owned(), (house_id, user_id.to_owned()));
+        assert!(previous.is_none(), "application already belongs to a house");
+        self
+    }
+}
+
+#[async_trait::async_trait]
+impl HouseholdStore for MemoryHouseholdStore {
+    async fn resolve_surface(
+        &self,
+        identity: &SurfaceIdentity,
+    ) -> Result<SurfaceResolution, HouseholdStoreError> {
+        let inner = self.household.lock().expect("memory store poisoned");
+        if let Some((house_id, user_id)) = inner.surfaces.get(&identity.application_id) {
+            if user_id == &identity.user_id && inner.members.contains(&(*house_id, user_id.clone()))
+            {
+                return inner
+                    .houses
+                    .get(house_id)
+                    .cloned()
+                    .map(SurfaceResolution::Bound)
+                    .ok_or_else(|| HouseholdStoreError("surface house is missing".to_owned()));
+            }
+            return Ok(SurfaceResolution::Unauthorized);
+        }
+
+        let mut matching_houses = inner
+            .members
+            .iter()
+            .filter(|(_, user_id)| user_id == &identity.user_id)
+            .map(|(house_id, _)| *house_id);
+        let Some(_) = matching_houses.next() else {
+            return Ok(SurfaceResolution::Unauthorized);
+        };
+        if matching_houses.next().is_some() {
+            return Ok(SurfaceResolution::Unauthorized);
+        }
+
+        Ok(SurfaceResolution::PairingRequired {
+            spoken_code: "123456".to_owned(),
+        })
+    }
+
+    async fn save_thread_id(
+        &self,
+        house_id: i64,
+        thread_id: &str,
+    ) -> Result<(), HouseholdStoreError> {
+        let mut inner = self.household.lock().expect("memory store poisoned");
+        let house = inner
+            .houses
+            .get_mut(&house_id)
+            .ok_or_else(|| HouseholdStoreError("house is missing".to_owned()))?;
+        if house
+            .codex_thread_id
+            .as_deref()
+            .is_some_and(|id| id != thread_id)
+        {
+            return Err(HouseholdStoreError(
+                "house already has a different thread".to_owned(),
+            ));
+        }
+        house.codex_thread_id = Some(thread_id.to_owned());
+        Ok(())
+    }
+
+    async fn poll_pending(
+        &self,
+        house_id: i64,
+        application_id: &str,
+    ) -> Result<PendingReply, HouseholdStoreError> {
+        Ok(self
+            .household
+            .lock()
+            .expect("memory store poisoned")
+            .pending
+            .get(&(house_id, application_id.to_owned()))
+            .cloned()
+            .unwrap_or(PendingReply::None))
+    }
+
+    async fn mark_thinking(
+        &self,
+        house_id: i64,
+        application_id: &str,
+    ) -> Result<(), HouseholdStoreError> {
+        self.household
+            .lock()
+            .expect("memory store poisoned")
+            .pending
+            .insert(
+                (house_id, application_id.to_owned()),
+                PendingReply::Thinking,
+            );
+        Ok(())
+    }
+
+    async fn save_ready(
+        &self,
+        house_id: i64,
+        application_id: &str,
+        text: &str,
+    ) -> Result<(), HouseholdStoreError> {
+        self.household
+            .lock()
+            .expect("memory store poisoned")
+            .pending
+            .insert(
+                (house_id, application_id.to_owned()),
+                PendingReply::Ready(text.to_owned()),
+            );
+        Ok(())
+    }
+
+    async fn clear_pending(
+        &self,
+        house_id: i64,
+        application_id: &str,
+    ) -> Result<(), HouseholdStoreError> {
+        self.household
+            .lock()
+            .expect("memory store poisoned")
+            .pending
+            .remove(&(house_id, application_id.to_owned()));
+        Ok(())
+    }
+
+    async fn take_continuation(
+        &self,
+        house_id: i64,
+        application_id: &str,
+    ) -> Result<Option<Vec<String>>, HouseholdStoreError> {
+        Ok(self
+            .household
+            .lock()
+            .expect("memory store poisoned")
+            .continuations
+            .remove(&(house_id, application_id.to_owned())))
+    }
+
+    async fn save_continuation(
+        &self,
+        house_id: i64,
+        application_id: &str,
+        chunks: &[String],
+    ) -> Result<(), HouseholdStoreError> {
+        let key = (house_id, application_id.to_owned());
+        let mut inner = self.household.lock().expect("memory store poisoned");
+        if chunks.is_empty() {
+            inner.continuations.remove(&key);
+        } else {
+            inner.continuations.insert(key, chunks.to_vec());
+        }
+        Ok(())
+    }
+
+    async fn clear_continuation(
+        &self,
+        house_id: i64,
+        application_id: &str,
+    ) -> Result<(), HouseholdStoreError> {
+        self.household
+            .lock()
+            .expect("memory store poisoned")
+            .continuations
+            .remove(&(house_id, application_id.to_owned()));
+        Ok(())
+    }
+}
 
 /// [`ChatProvider`] fake with a scripted reply, an optional delay and a log
 /// of every request it received.
