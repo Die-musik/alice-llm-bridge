@@ -14,6 +14,7 @@ mod pending;
 pub mod phrases;
 mod profile;
 mod prompt;
+pub mod reply;
 mod store;
 pub mod testing;
 
