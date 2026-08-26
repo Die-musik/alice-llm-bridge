@@ -3,5 +3,7 @@
 
 pub mod assemble;
 pub mod config;
+pub mod house_store_pg;
 pub mod routes;
+pub mod state_crypto;
 pub mod store_pg;
