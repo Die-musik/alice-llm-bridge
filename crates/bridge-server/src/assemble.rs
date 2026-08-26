@@ -6,12 +6,32 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bridge_core::{
-    ConversationStore, Engine, EngineConfig, FamilyRoster, Mode, ModelPreset, ModelRegistry,
-    Profile, ProfileRole,
+    ConversationStore, Engine, EngineConfig, FamilyRoster, HouseRuntime, HouseholdEngine,
+    HouseholdEngineConfig, HouseholdStore, Mode, ModelPreset, ModelRegistry, Profile, ProfileRole,
 };
 use llm_providers::{ChatProvider, OpenAiCompatClient};
 
-use crate::config::{AppConfig, ConfigError, ModelPresetConfig};
+use crate::config::{AppConfig, ConfigError, ModelPresetConfig, RuntimeMode};
+
+pub fn build_household_engine(
+    config: &AppConfig,
+    store: Arc<dyn HouseholdStore>,
+    runtime: Arc<dyn HouseRuntime>,
+) -> Result<HouseholdEngine, ConfigError> {
+    if config.runtime.mode != RuntimeMode::HouseholdCodex {
+        return Err(ConfigError::Invalid(
+            "household engine requested while runtime mode is legacy".to_owned(),
+        ));
+    }
+    Ok(HouseholdEngine::new(
+        store,
+        runtime,
+        HouseholdEngineConfig {
+            reply_budget: Duration::from_millis(config.defaults.reply_budget_ms),
+            chunk_limit: config.runtime.chunk_limit,
+        },
+    ))
+}
 
 pub fn build_engine(
     config: &AppConfig,
@@ -98,7 +118,7 @@ fn preset(
 mod tests {
     use super::*;
     use crate::config::AppConfig;
-    use bridge_core::testing::MemoryStore;
+    use bridge_core::testing::{MemoryHouseholdStore, MemoryStore, ScriptedHouseRuntime};
     use std::sync::Arc;
 
     const CONFIG: &str = r#"
@@ -152,5 +172,30 @@ persona = ""
             result,
             Err(crate::config::ConfigError::MissingEnv(_))
         ));
+    }
+
+    #[test]
+    fn household_engine_does_not_resolve_legacy_provider_keys() {
+        let config = AppConfig::from_toml(&format!(
+            r#"
+[runtime]
+mode = "household_codex"
+codex_socket = "/run/alice-codex/app-server.sock"
+codex_cwd_root = "/srv/alice/houses"
+permission_profile_prefix = "alice-house-"
+chunk_limit = 850
+
+{CONFIG}"#
+        ))
+        .unwrap();
+
+        assert!(
+            build_household_engine(
+                &config,
+                Arc::new(MemoryHouseholdStore::fixture()),
+                ScriptedHouseRuntime::replying("ответ")
+            )
+            .is_ok()
+        );
     }
 }

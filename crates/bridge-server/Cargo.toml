@@ -13,6 +13,7 @@ axum = { workspace = true }
 bridge-core = { workspace = true }
 chrono = { workspace = true }
 chacha20poly1305 = { workspace = true }
+codex-runtime = { workspace = true }
 hex = { workspace = true }
 hmac = { workspace = true }
 llm-providers = { workspace = true }

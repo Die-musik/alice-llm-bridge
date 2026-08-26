@@ -1,5 +1,12 @@
 # Copy to config.toml and adjust for your family.
 
+[runtime]
+mode = "household_codex"
+codex_socket = "/run/alice-codex/app-server.sock"
+codex_cwd_root = "/srv/alice/houses"
+permission_profile_prefix = "alice-house-"
+chunk_limit = 850
+
 [server]
 listen = "0.0.0.0:8080"
 allowed_user_ids = ["..."]

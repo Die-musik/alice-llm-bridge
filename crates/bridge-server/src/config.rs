@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -25,6 +25,8 @@ pub enum ConfigError {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AppConfig {
+    #[serde(default)]
+    pub runtime: RuntimeConfig,
     pub server: ServerConfig,
     pub defaults: DefaultsConfig,
     pub providers: HashMap<String, ProviderConfig>,
@@ -32,6 +34,41 @@ pub struct AppConfig {
     pub profiles: Vec<ProfileConfig>,
     #[serde(default)]
     pub modes: Vec<ModeConfig>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeMode {
+    #[default]
+    Legacy,
+    HouseholdCodex,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeConfig {
+    #[serde(default)]
+    pub mode: RuntimeMode,
+    #[serde(default)]
+    pub codex_socket: Option<PathBuf>,
+    #[serde(default)]
+    pub codex_cwd_root: Option<PathBuf>,
+    #[serde(default = "default_permission_profile_prefix")]
+    pub permission_profile_prefix: String,
+    #[serde(default = "default_chunk_limit")]
+    pub chunk_limit: usize,
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            mode: RuntimeMode::Legacy,
+            codex_socket: None,
+            codex_cwd_root: None,
+            permission_profile_prefix: default_permission_profile_prefix(),
+            chunk_limit: default_chunk_limit(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -119,6 +156,38 @@ impl AppConfig {
     }
 
     fn validate(&self) -> Result<(), ConfigError> {
+        if self.runtime.mode == RuntimeMode::HouseholdCodex {
+            let socket = self.runtime.codex_socket.as_deref().ok_or_else(|| {
+                ConfigError::Invalid("household runtime requires codex_socket".to_owned())
+            })?;
+            let cwd_root = self.runtime.codex_cwd_root.as_deref().ok_or_else(|| {
+                ConfigError::Invalid("household runtime requires codex_cwd_root".to_owned())
+            })?;
+            if !socket.is_absolute() || !cwd_root.is_absolute() {
+                return Err(ConfigError::Invalid(
+                    "household Codex paths must be absolute".to_owned(),
+                ));
+            }
+            if self.runtime.chunk_limit <= " Продолжать?".chars().count()
+                || self.runtime.chunk_limit > 900
+            {
+                return Err(ConfigError::Invalid(
+                    "household chunk_limit must leave room for continuation and be at most 900"
+                        .to_owned(),
+                ));
+            }
+            if self.runtime.permission_profile_prefix.is_empty()
+                || !self
+                    .runtime
+                    .permission_profile_prefix
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || character == '-')
+            {
+                return Err(ConfigError::Invalid(
+                    "household permission_profile_prefix is invalid".to_owned(),
+                ));
+            }
+        }
         for preset in [&self.models.fast, &self.models.smart] {
             if !self.providers.contains_key(&preset.provider) {
                 return Err(ConfigError::UnknownProvider {
@@ -163,6 +232,12 @@ fn default_utc_offset_hours() -> i32 {
 }
 fn default_temperature() -> f32 {
     0.7
+}
+fn default_permission_profile_prefix() -> String {
+    "alice-house-".to_owned()
+}
+fn default_chunk_limit() -> usize {
+    850
 }
 
 #[cfg(test)]
@@ -214,6 +289,7 @@ prompt = "Рассказывай сказки."
     #[test]
     fn parses_full_config_with_defaults() {
         let config = AppConfig::from_toml(&sample()).unwrap();
+        assert_eq!(config.runtime.mode, RuntimeMode::Legacy);
         assert_eq!(config.defaults.context_window, 12);
         assert_eq!(config.defaults.reply_budget_ms, 2800);
         assert_eq!(config.defaults.utc_offset_hours, 3);
@@ -235,5 +311,59 @@ prompt = "Рассказывай сказки."
         let broken = sample().replace(r#"profile = "Дима""#, r#"profile = "Вася""#);
         let err = AppConfig::from_toml(&broken).unwrap_err();
         assert!(matches!(err, ConfigError::Invalid(_)));
+    }
+
+    #[test]
+    fn parses_household_runtime_with_absolute_paths() {
+        let household = format!(
+            r#"
+[runtime]
+mode = "household_codex"
+codex_socket = "/run/alice-codex/app-server.sock"
+codex_cwd_root = "/srv/alice/houses"
+permission_profile_prefix = "alice-house-"
+chunk_limit = 850
+
+{}"#,
+            sample()
+        );
+        let config = AppConfig::from_toml(&household).unwrap();
+        assert_eq!(config.runtime.mode, RuntimeMode::HouseholdCodex);
+        assert_eq!(config.runtime.chunk_limit, 850);
+    }
+
+    #[test]
+    fn household_runtime_rejects_relative_paths_and_oversized_chunks() {
+        for broken_runtime in [
+            r#"
+[runtime]
+mode = "household_codex"
+codex_socket = "relative.sock"
+codex_cwd_root = "/srv/alice/houses"
+permission_profile_prefix = "alice-house-"
+chunk_limit = 850
+"#,
+            r#"
+[runtime]
+mode = "household_codex"
+codex_socket = "/run/alice-codex/app-server.sock"
+codex_cwd_root = "relative/houses"
+permission_profile_prefix = "alice-house-"
+chunk_limit = 850
+"#,
+            r#"
+[runtime]
+mode = "household_codex"
+codex_socket = "/run/alice-codex/app-server.sock"
+codex_cwd_root = "/srv/alice/houses"
+permission_profile_prefix = "alice-house-"
+chunk_limit = 901
+"#,
+        ] {
+            assert!(matches!(
+                AppConfig::from_toml(&format!("{broken_runtime}\n{}", sample())),
+                Err(ConfigError::Invalid(_))
+            ));
+        }
     }
 }
