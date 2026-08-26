@@ -32,7 +32,7 @@ CREATE TABLE surfaces (
 
 CREATE TABLE pairing_requests (
     id BIGSERIAL PRIMARY KEY,
-    house_id BIGINT NOT NULL,
+    house_id BIGINT,
     yandex_user_id TEXT NOT NULL,
     application_id TEXT NOT NULL UNIQUE,
     code_hash BYTEA NOT NULL,

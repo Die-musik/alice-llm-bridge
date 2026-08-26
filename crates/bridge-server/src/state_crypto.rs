@@ -79,14 +79,12 @@ impl StateCipher {
 
     pub(crate) fn pairing_code_hash(
         &self,
-        house_id: i64,
         user_id: &str,
         application_id: &str,
         code: &str,
     ) -> [u8; 32] {
         let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&self.key)
             .expect("HMAC accepts keys of any length");
-        mac.update(&house_id.to_be_bytes());
         for value in [
             user_id.as_bytes(),
             application_id.as_bytes(),
@@ -101,14 +99,12 @@ impl StateCipher {
     pub(crate) fn pairing_code_matches(
         &self,
         stored_hash: &[u8],
-        house_id: i64,
         user_id: &str,
         application_id: &str,
         code: &str,
     ) -> bool {
         let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&self.key)
             .expect("HMAC accepts keys of any length");
-        mac.update(&house_id.to_be_bytes());
         for value in [
             user_id.as_bytes(),
             application_id.as_bytes(),

@@ -34,7 +34,8 @@ impl PgHouseholdStore {
         let rows = sqlx::query(
             "SELECT id, yandex_user_id, application_id, code_hash \
              FROM pairing_requests \
-             WHERE house_id = $1 AND approved_at IS NULL AND expires_at > now() \
+             WHERE (house_id = $1 OR house_id IS NULL) \
+               AND approved_at IS NULL AND expires_at > now() \
              FOR UPDATE",
         )
         .bind(house_id)
@@ -48,7 +49,7 @@ impl PgHouseholdStore {
             let application_id: String = row.get("application_id");
             let stored_hash: Vec<u8> = row.get("code_hash");
             self.cipher
-                .pairing_code_matches(&stored_hash, house_id, &user_id, &application_id, code)
+                .pairing_code_matches(&stored_hash, &user_id, &application_id, code)
                 .then_some((request_id, user_id, application_id))
         });
 
@@ -56,6 +57,23 @@ impl PgHouseholdStore {
             transaction.rollback().await.map_err(db_error)?;
             return Ok(false);
         };
+
+        let membership_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(\
+                SELECT 1 FROM house_members m JOIN houses h ON h.id = m.house_id \
+                WHERE m.house_id = $1 AND m.yandex_user_id = $2 \
+                  AND m.enabled AND h.enabled\
+             )",
+        )
+        .bind(house_id)
+        .bind(&user_id)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(db_error)?;
+        if !membership_exists {
+            transaction.rollback().await.map_err(db_error)?;
+            return Ok(false);
+        }
 
         let inserted = sqlx::query(
             "INSERT INTO surfaces (application_id, house_id, yandex_user_id) \
@@ -78,8 +96,9 @@ impl PgHouseholdStore {
             ));
         }
 
-        sqlx::query("UPDATE pairing_requests SET approved_at = now() WHERE id = $1")
+        sqlx::query("UPDATE pairing_requests SET house_id = $2, approved_at = now() WHERE id = $1")
             .bind(request_id)
+            .bind(house_id)
             .execute(&mut *transaction)
             .await
             .map_err(db_error)?;
@@ -89,14 +108,14 @@ impl PgHouseholdStore {
 
     async fn create_pairing_request(
         &self,
-        house_id: i64,
+        house_id: Option<i64>,
         user_id: &str,
         application_id: &str,
     ) -> Result<String, HouseholdStoreError> {
         let code = format!("{:06}", rand::random_range(0..1_000_000_u32));
         let code_hash = self
             .cipher
-            .pairing_code_hash(house_id, user_id, application_id, &code);
+            .pairing_code_hash(user_id, application_id, &code);
         sqlx::query(
             "INSERT INTO pairing_requests \
              (house_id, yandex_user_id, application_id, code_hash, expires_at) \
@@ -196,10 +215,10 @@ impl HouseholdStore for PgHouseholdStore {
         .fetch_all(&self.pool)
         .await
         .map_err(db_error)?;
-        if memberships.len() != 1 {
+        if memberships.is_empty() {
             return Ok(SurfaceResolution::Unauthorized);
         }
-        let house_id: i64 = memberships[0].get("house_id");
+        let house_id = (memberships.len() == 1).then(|| memberships[0].get::<i64, _>("house_id"));
         let spoken_code = self
             .create_pairing_request(house_id, &identity.user_id, &identity.application_id)
             .await?;
@@ -525,6 +544,28 @@ mod tests {
             store.resolve_surface(&identity).await.unwrap(),
             SurfaceResolution::Bound(_)
         ));
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn owner_selects_house_when_member_belongs_to_more_than_one(pool: sqlx::PgPool) {
+        let first = house(&pool, "Первый").await;
+        let second = house(&pool, "Второй").await;
+        member(&pool, first, "OWNER").await;
+        member(&pool, second, "OWNER").await;
+        let store = store(pool);
+        let identity = SurfaceIdentity::new("OWNER", "new-station");
+
+        let SurfaceResolution::PairingRequired { spoken_code } =
+            store.resolve_surface(&identity).await.unwrap()
+        else {
+            panic!("multi-house member still needs a neutral pairing code")
+        };
+        assert!(store.approve_pairing(second, &spoken_code).await.unwrap());
+        let SurfaceResolution::Bound(bound) = store.resolve_surface(&identity).await.unwrap()
+        else {
+            panic!("approved surface must resolve")
+        };
+        assert_eq!(bound.id, second);
     }
 
     #[sqlx::test(migrations = "../../migrations")]
