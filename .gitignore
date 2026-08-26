@@ -4,3 +4,4 @@ config.toml
 .dev/
 .idea/
 .PVS-Studio/
+.worktrees/
