@@ -60,7 +60,12 @@ impl HouseRuntime for ScriptedHouseRuntime {
         Ok(self.thread_id.clone())
     }
 
-    async fn turn(&self, thread_id: &str, utterance: &str) -> Result<String, RuntimeError> {
+    async fn turn(
+        &self,
+        _house: &HouseContext,
+        thread_id: &str,
+        utterance: &str,
+    ) -> Result<String, RuntimeError> {
         self.turn_calls
             .lock()
             .expect("scripted runtime mutex poisoned")

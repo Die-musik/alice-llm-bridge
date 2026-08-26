@@ -1,10 +1,9 @@
 # alice-llm-bridge
 
-A private Yandex Alice skill that turns a Yandex Station into a voice
-interface for large language models. Family members are recognized by name,
-each with their own conversation history, persona and safety rules; context
-depth and model choice are tunable by voice to keep API spend predictable.
-Backend written in Rust.
+A private Yandex Alice skill that turns Yandex Stations into a voice interface
+for either OpenAI-compatible models or an isolated Codex household runtime.
+In household mode, one home has one persistent conversation shared by its
+approved accounts and devices. Backend written in Rust.
 
 ## Features
 
@@ -25,6 +24,15 @@ Backend written in Rust.
 - **Deferred answers** — works around the Alice webhook's ~4.5 second
   deadline: if the model is still thinking when the deadline hits, the skill
   says so and delivers the answer on the next utterance.
+- **One home, one Codex thread** — approved accounts and Stations in the same
+  home continue one persistent conversation; different homes are isolated.
+- **Automatic home routing** — after a one-time six-digit device pairing, the
+  Yandex account/application identity selects the home without a spoken name.
+- **Deterministic voice continuation** — replies are capped at 850 characters;
+  any non-refusal utterance continues the next chunk.
+- **Restricted Homey control** — only three house-scoped tools are accepted,
+  mutations require read-back with `verified=true`, and dangerous device
+  classes are excluded.
 - **Private by construction** — the skill stays in draft status in the
   Yandex Dialogs console (never published), the webhook path includes a
   secret segment, and an account allowlist rejects anyone else.
@@ -38,19 +46,19 @@ sequenceDiagram
     participant Nginx as nginx (TLS)
     participant Server as bridge-server (axum)
     participant Engine as bridge-core Engine
-    participant LLM as LLM provider
+    participant Runtime as Codex or LLM runtime
 
     Station->>Dialogs: voice utterance
     Dialogs->>Nginx: POST /alice/webhook/<secret>
     Nginx->>Server: reverse proxy
     Server->>Engine: handle(user_id, utterance)
-    Engine->>LLM: chat completion
+    Engine->>Runtime: persistent household turn or chat completion
     alt answers within ~2.8s
-        LLM-->>Engine: completion
+        Runtime-->>Engine: completion
         Engine-->>Server: reply text
     else still running at the deadline
         Engine-->>Server: "give me a second..."
-        Note over Engine,LLM: request keeps running in the background
+        Note over Engine,Runtime: request keeps running in the background
     end
     Server-->>Dialogs: response JSON
     Dialogs-->>Station: spoken reply
@@ -63,7 +71,7 @@ time.
 
 ## Architecture
 
-A Cargo workspace of four crates, each with a single responsibility:
+A Cargo workspace of five crates, each with a single responsibility:
 
 | Crate | Responsibility |
 |---|---|
@@ -71,6 +79,7 @@ A Cargo workspace of four crates, each with a single responsibility:
 | `llm-providers` | The `ChatProvider` trait and an `OpenAiCompatClient` implementing it for any OpenAI-compatible endpoint. |
 | `bridge-core` | The domain: profiles, voice command parsing, prompt assembly, sliding context, deferred answers, cost accounting. Depends only on the `ChatProvider` trait and its own `ConversationStore` trait — no HTTP, no database. |
 | `bridge-server` | axum webhook, TOML configuration, the Postgres implementation of `ConversationStore`, process wiring. |
+| `codex-runtime` | Restricted `codex app-server` client over WebSocket-on-Unix, persistent household threads, exact permission profiles and Homey lifecycle enforcement. |
 
 `bridge-core` is the part worth reading first: it has no knowledge of Alice,
 HTTP, or Postgres, which is what makes it possible to unit-test the entire
@@ -98,6 +107,8 @@ a database.
 
 Copy `config.example.toml` to `config.toml` and adjust:
 
+- `[runtime]` — `legacy` for the original provider flow or
+  `household_codex` for one persistent Codex conversation per home.
 - `[server]` — listen address and `allowed_user_ids` (Yandex account IDs
   permitted to use the skill; leave empty only for local testing).
 - `[defaults]` — default profile, context window size, reply budget,
@@ -115,6 +126,7 @@ Copy `config.example.toml` to `config.toml` and adjust:
 | `CONFIG_PATH` | Path to the TOML config (default `config.toml`) |
 | `WEBHOOK_SECRET` | Secret path segment the webhook URL must include |
 | `DATABASE_URL` | Postgres connection string |
+| `STATE_ENCRYPTION_KEY` | 64 hex characters for encrypted temporary household state and pairing HMAC |
 | `DEEPSEEK_API_KEY` (or whatever `api_key_env` names) | Provider API key |
 | `RUST_LOG` | `tracing` filter, e.g. `info` or `bridge_server=debug` |
 
@@ -183,7 +195,8 @@ and an Actions run can never interleave on the server's files.
 
 See [`docs/skill-setup.md`](docs/skill-setup.md) for step-by-step
 instructions to register the skill in the Yandex Dialogs console and keep
-it private to your account.
+it private. Household provisioning, pairing and Homey safety gates are in
+[`docs/household-setup.md`](docs/household-setup.md).
 
 ## Development
 

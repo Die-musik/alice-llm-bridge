@@ -8,10 +8,12 @@ description = "Restricted Codex app-server runtime for household conversations"
 [dependencies]
 async-trait = { workspace = true }
 bridge-core = { workspace = true }
+futures-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

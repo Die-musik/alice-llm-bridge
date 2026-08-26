@@ -11,5 +11,10 @@ pub trait HouseRuntime: Send + Sync {
     async fn start_thread(&self, house: &HouseContext, instructions: &str)
     -> RuntimeResult<String>;
 
-    async fn turn(&self, thread_id: &str, utterance: &str) -> RuntimeResult<String>;
+    async fn turn(
+        &self,
+        house: &HouseContext,
+        thread_id: &str,
+        utterance: &str,
+    ) -> RuntimeResult<String>;
 }

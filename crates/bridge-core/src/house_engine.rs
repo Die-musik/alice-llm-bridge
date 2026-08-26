@@ -137,7 +137,10 @@ impl HouseholdEngine {
                     .map_err(|_| ())?;
                 thread_id
             };
-            runtime.turn(&thread_id, &utterance).await.map_err(|_| ())
+            runtime
+                .turn(&work_house, &thread_id, &utterance)
+                .await
+                .map_err(|_| ())
         });
 
         match tokio::time::timeout(self.config.reply_budget, &mut work).await {

@@ -6,6 +6,7 @@ pub(crate) const THREAD_START: &str = "thread/start";
 pub(crate) const THREAD_RESUME: &str = "thread/resume";
 pub(crate) const TURN_START: &str = "turn/start";
 pub(crate) const AGENT_MESSAGE_DELTA: &str = "item/agentMessage/delta";
+pub(crate) const ITEM_COMPLETED: &str = "item/completed";
 pub(crate) const TURN_COMPLETED: &str = "turn/completed";
 
 pub(crate) fn initialize_params() -> Value {
@@ -20,23 +21,58 @@ pub(crate) fn initialize_params() -> Value {
     })
 }
 
-pub(crate) fn thread_start_params(cwd: &str, permissions: &str, instructions: &str) -> Value {
+pub(crate) fn thread_start_params(
+    cwd: &str,
+    permissions: &str,
+    instructions: &str,
+    homey_connector: &str,
+) -> Value {
     json!({
         "cwd": cwd,
         "permissions": permissions,
         "developerInstructions": instructions,
         "approvalPolicy": "never",
-        "ephemeral": false
+        "ephemeral": false,
+        "config": isolated_house_config(homey_connector)
     })
 }
 
-pub(crate) fn thread_resume_params(thread_id: &str) -> Value {
-    json!({"threadId": thread_id})
+pub(crate) fn thread_resume_params(
+    thread_id: &str,
+    permissions: &str,
+    homey_connector: &str,
+) -> Value {
+    json!({
+        "threadId": thread_id,
+        "permissions": permissions,
+        "approvalPolicy": "never",
+        "config": isolated_house_config(homey_connector)
+    })
 }
 
 pub(crate) fn turn_start_params(thread_id: &str, utterance: &str) -> Value {
     json!({
         "threadId": thread_id,
         "input": [{"type": "text", "text": utterance}]
+    })
+}
+
+fn isolated_house_config(homey_connector: &str) -> Value {
+    json!({
+        "features": {
+            "shell_tool": false,
+            "unified_exec": false,
+            "skill_mcp_dependency_install": false
+        },
+        "tools": {
+            "web_search": false,
+            "view_image": false
+        },
+        "apps": {
+            "_default": {"enabled": false}
+        },
+        "mcp_servers": {
+            homey_connector: {"enabled": true}
+        }
     })
 }

@@ -90,6 +90,21 @@ async fn start_thread_uses_house_cwd_permission_profile_and_instructions() {
     assert_eq!(request["params"]["ephemeral"], false);
     assert_eq!(request["params"]["approvalPolicy"], "never");
     assert!(request["params"].get("sandbox").is_none());
+    assert_eq!(request["params"]["config"]["features"]["shell_tool"], false);
+    assert_eq!(
+        request["params"]["config"]["features"]["unified_exec"],
+        false
+    );
+    assert_eq!(request["params"]["config"]["tools"]["web_search"], false);
+    assert_eq!(request["params"]["config"]["tools"]["view_image"], false);
+    assert_eq!(
+        request["params"]["config"]["apps"]["_default"]["enabled"],
+        false
+    );
+    assert_eq!(
+        request["params"]["config"]["mcp_servers"]["homey-mother"]["enabled"],
+        true
+    );
     write_message(
         &mut write,
         json!({"id": request["id"], "result": {
@@ -133,7 +148,11 @@ async fn start_thread_rejects_wrong_or_writable_permission_profile() {
 async fn turn_resumes_thread_and_concatenates_only_matching_deltas() {
     let (client, server) = tokio::io::duplex(32 * 1024);
     let runtime = runtime();
-    let task = tokio::spawn(async move { runtime.turn_on(client, "thread-1", "Привет").await });
+    let task = tokio::spawn(async move {
+        runtime
+            .turn_on(client, &house(), "thread-1", "Привет")
+            .await
+    });
     let (read, mut write) = tokio::io::split(server);
     let mut read = BufReader::new(read);
     initialize(&mut read, &mut write).await;
@@ -141,6 +160,11 @@ async fn turn_resumes_thread_and_concatenates_only_matching_deltas() {
     let resume = read_message(&mut read).await;
     assert_eq!(resume["method"], "thread/resume");
     assert_eq!(resume["params"]["threadId"], "thread-1");
+    assert_eq!(resume["params"]["permissions"], "alice-house-1");
+    assert_eq!(
+        resume["params"]["config"]["mcp_servers"]["homey-mother"]["enabled"],
+        true
+    );
     write_message(
         &mut write,
         json!({"id": resume["id"], "result": {
@@ -192,7 +216,11 @@ async fn turn_resumes_thread_and_concatenates_only_matching_deltas() {
 async fn turn_rejects_resume_outside_household_permission_profiles() {
     let (client, server) = tokio::io::duplex(32 * 1024);
     let runtime = runtime();
-    let task = tokio::spawn(async move { runtime.turn_on(client, "thread-1", "Привет").await });
+    let task = tokio::spawn(async move {
+        runtime
+            .turn_on(client, &house(), "thread-1", "Привет")
+            .await
+    });
     let (read, mut write) = tokio::io::split(server);
     let mut read = BufReader::new(read);
     initialize(&mut read, &mut write).await;
@@ -201,7 +229,7 @@ async fn turn_rejects_resume_outside_household_permission_profiles() {
         &mut write,
         json!({"id": resume["id"], "result": {
             "thread": {"id": "thread-1"},
-            "activePermissionProfile": {"id": "global-profile"},
+            "activePermissionProfile": {"id": "alice-house-2"},
             "sandbox": {"type": "readOnly", "networkAccess": false}
         }}),
     )
@@ -215,7 +243,8 @@ async fn turn_rejects_resume_outside_household_permission_profiles() {
 async fn command_and_file_approvals_are_declined() {
     let (client, server) = tokio::io::duplex(32 * 1024);
     let runtime = runtime();
-    let task = tokio::spawn(async move { runtime.turn_on(client, "thread-1", "Тест").await });
+    let task =
+        tokio::spawn(async move { runtime.turn_on(client, &house(), "thread-1", "Тест").await });
     let (read, mut write) = tokio::io::split(server);
     let mut read = BufReader::new(read);
     initialize(&mut read, &mut write).await;
@@ -271,7 +300,8 @@ async fn command_and_file_approvals_are_declined() {
 async fn unknown_server_request_is_rejected_and_fails_turn() {
     let (client, server) = tokio::io::duplex(32 * 1024);
     let runtime = runtime();
-    let task = tokio::spawn(async move { runtime.turn_on(client, "thread-1", "Тест").await });
+    let task =
+        tokio::spawn(async move { runtime.turn_on(client, &house(), "thread-1", "Тест").await });
     let (read, mut write) = tokio::io::split(server);
     let mut read = BufReader::new(read);
     initialize(&mut read, &mut write).await;

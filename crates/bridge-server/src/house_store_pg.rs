@@ -597,7 +597,7 @@ mod tests {
         assert_eq!(nonce.len(), 12);
         assert!(
             !ciphertext
-                .windows("секретный ответ".as_bytes().len())
+                .windows("секретный ответ".len())
                 .any(|window| window == "секретный ответ".as_bytes())
         );
         assert_eq!(

@@ -11,7 +11,7 @@ use tokio::{
     net::UnixStream,
 };
 
-use client::JsonlClient;
+use client::{JsonRpcClient, JsonTransport};
 use error::Result;
 use protocol::{
     INITIALIZE, INITIALIZED, THREAD_RESUME, THREAD_START, TURN_START, initialize_params,
@@ -64,15 +64,29 @@ impl CodexRuntime {
         instructions: &str,
     ) -> Result<String>
     where
-        S: AsyncRead + AsyncWrite + Unpin,
+        S: AsyncRead + AsyncWrite + Send + Unpin,
+    {
+        let mut client = JsonRpcClient::jsonl(stream);
+        self.start_thread_with(&mut client, house, instructions)
+            .await
+    }
+
+    async fn start_thread_with<T>(
+        &self,
+        client: &mut JsonRpcClient<T>,
+        house: &HouseContext,
+        instructions: &str,
+    ) -> Result<String>
+    where
+        T: JsonTransport,
     {
         if house.id <= 0 {
             return Err(CodexRuntimeError::InvalidConfig(
                 "house id must be positive",
             ));
         }
-        let mut client = JsonlClient::new(stream);
-        initialize(&mut client).await?;
+        validate_homey_connector(&house.homey_connector_id)?;
+        initialize(client).await?;
         let cwd = self.config.cwd_root.join(house.id.to_string());
         let cwd = cwd
             .to_str()
@@ -81,7 +95,7 @@ impl CodexRuntime {
         let result = client
             .request(
                 THREAD_START,
-                thread_start_params(cwd, &permissions, instructions),
+                thread_start_params(cwd, &permissions, instructions, &house.homey_connector_id),
             )
             .await?;
         validate_permission_result(&result, Some(&permissions))?;
@@ -92,28 +106,49 @@ impl CodexRuntime {
         )
     }
 
-    pub async fn turn_on<S>(&self, stream: S, thread_id: &str, utterance: &str) -> Result<String>
+    pub async fn turn_on<S>(
+        &self,
+        stream: S,
+        house: &HouseContext,
+        thread_id: &str,
+        utterance: &str,
+    ) -> Result<String>
     where
-        S: AsyncRead + AsyncWrite + Unpin,
+        S: AsyncRead + AsyncWrite + Send + Unpin,
+    {
+        let mut client = JsonRpcClient::jsonl(stream);
+        self.turn_with(&mut client, house, thread_id, utterance)
+            .await
+    }
+
+    async fn turn_with<T>(
+        &self,
+        client: &mut JsonRpcClient<T>,
+        house: &HouseContext,
+        thread_id: &str,
+        utterance: &str,
+    ) -> Result<String>
+    where
+        T: JsonTransport,
     {
         if thread_id.is_empty() {
             return Err(CodexRuntimeError::Protocol("thread id is empty"));
         }
-        let mut client = JsonlClient::new(stream);
-        initialize(&mut client).await?;
-        let resumed = client
-            .request(THREAD_RESUME, thread_resume_params(thread_id))
-            .await?;
-        validate_permission_result(&resumed, None)?;
-        let resumed_profile = resumed
-            .pointer("/activePermissionProfile/id")
-            .and_then(Value::as_str)
-            .expect("validated permission profile is present");
-        if !resumed_profile.starts_with(&self.config.permission_profile_prefix) {
-            return Err(CodexRuntimeError::Protocol(
-                "resumed thread is outside household permission profiles",
+        if house.id <= 0 {
+            return Err(CodexRuntimeError::InvalidConfig(
+                "house id must be positive",
             ));
         }
+        validate_homey_connector(&house.homey_connector_id)?;
+        initialize(client).await?;
+        let permissions = format!("{}{}", self.config.permission_profile_prefix, house.id);
+        let resumed = client
+            .request(
+                THREAD_RESUME,
+                thread_resume_params(thread_id, &permissions, &house.homey_connector_id),
+            )
+            .await?;
+        validate_permission_result(&resumed, Some(&permissions))?;
         if required_string(
             &resumed,
             "/thread/id",
@@ -128,14 +163,15 @@ impl CodexRuntime {
             .request(TURN_START, turn_start_params(thread_id, utterance))
             .await?;
         let turn_id = required_string(&started, "/turn/id", "turn/start response has no turn id")?;
-        client.collect_turn(thread_id, &turn_id).await
+        client
+            .collect_turn(thread_id, &turn_id, &house.homey_connector_id)
+            .await
     }
 }
 
-async fn initialize<R, W>(client: &mut JsonlClient<R, W>) -> Result<()>
+async fn initialize<T>(client: &mut JsonRpcClient<T>) -> Result<()>
 where
-    R: AsyncRead + Unpin,
-    W: AsyncWrite + Unpin,
+    T: JsonTransport,
 {
     client.request(INITIALIZE, initialize_params()).await?;
     client.notify(INITIALIZED, None).await
@@ -174,6 +210,19 @@ fn validate_permission_result(result: &Value, expected_profile: Option<&str>) ->
     Ok(())
 }
 
+fn validate_homey_connector(connector: &str) -> Result<()> {
+    if !connector.starts_with("homey-")
+        || !connector
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err(CodexRuntimeError::InvalidConfig(
+            "Homey connector id is invalid",
+        ));
+    }
+    Ok(())
+}
+
 #[async_trait::async_trait]
 impl HouseRuntime for CodexRuntime {
     async fn start_thread(
@@ -184,20 +233,27 @@ impl HouseRuntime for CodexRuntime {
         let stream = UnixStream::connect(&self.config.socket_path)
             .await
             .map_err(|_| HouseRuntimeError("Codex app-server is unavailable".to_owned()))?;
-        self.start_thread_on(stream, house, instructions)
+        let mut client = JsonRpcClient::unix_websocket(stream)
+            .await
+            .map_err(map_house_error)?;
+        self.start_thread_with(&mut client, house, instructions)
             .await
             .map_err(map_house_error)
     }
 
     async fn turn(
         &self,
+        house: &HouseContext,
         thread_id: &str,
         utterance: &str,
     ) -> std::result::Result<String, HouseRuntimeError> {
         let stream = UnixStream::connect(&self.config.socket_path)
             .await
             .map_err(|_| HouseRuntimeError("Codex app-server is unavailable".to_owned()))?;
-        self.turn_on(stream, thread_id, utterance)
+        let mut client = JsonRpcClient::unix_websocket(stream)
+            .await
+            .map_err(map_house_error)?;
+        self.turn_with(&mut client, house, thread_id, utterance)
             .await
             .map_err(map_house_error)
     }

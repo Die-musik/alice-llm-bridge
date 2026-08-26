@@ -9,6 +9,8 @@ chunk_limit = 850
 
 [server]
 listen = "0.0.0.0:8080"
+# Legacy-mode allowlist. Household mode authorizes through house_members and
+# one-time surface pairing instead.
 allowed_user_ids = ["..."]
 
 [defaults]

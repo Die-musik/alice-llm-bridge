@@ -1,6 +1,6 @@
 # Alice Household Chat MVP Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [x]) syntax for tracking.
 
 **Goal:** Добавить в alice-llm-bridge изолированный Codex household mode: один persistent thread на дом, несколько разрешённых аккаунтов/колонок, owner-approved pairing, безопасный Homey contract и deterministic voice continuation.
 
@@ -35,7 +35,7 @@
 - Produces executable .dev/cargo/bin/cargo for every later verification command.
 - Every later cargo command is executed with CARGO_HOME="$PWD/.dev/cargo", RUSTUP_HOME="$PWD/.dev/rustup" and PATH="$PWD/.dev/cargo/bin:$PATH".
 
-- [ ] **Step 1: Download an isolated official rustup installer**
+- [x] **Step 1: Download an isolated official rustup installer**
 
 ~~~bash
 arch=$(uname -m)
@@ -50,14 +50,14 @@ curl --proto '=https' --tlsv1.2 --fail --location \
 chmod 700 .dev/rustup-init
 ~~~
 
-- [ ] **Step 2: Install stable without changing user PATH**
+- [x] **Step 2: Install stable without changing user PATH**
 
 ~~~bash
 CARGO_HOME="$PWD/.dev/cargo" RUSTUP_HOME="$PWD/.dev/rustup" \
   .dev/rustup-init -y --no-modify-path --profile minimal --default-toolchain stable
 ~~~
 
-- [ ] **Step 3: Verify baseline**
+- [x] **Step 3: Verify baseline**
 
 Run: CARGO_HOME="$PWD/.dev/cargo" RUSTUP_HOME="$PWD/.dev/rustup" .dev/cargo/bin/cargo test --workspace
 
@@ -87,7 +87,7 @@ impl ContinuationDecision {
 }
 ~~~
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ~~~rust
 #[test]
@@ -115,23 +115,23 @@ fn explicit_refusal_stops_but_any_other_word_continues() {
 }
 ~~~
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: cargo test -p bridge-core reply::tests
 
 Expected: FAIL because the reply module is absent.
 
-- [ ] **Step 3: Implement minimal splitter**
+- [x] **Step 3: Implement minimal splitter**
 
 Use suffix " Продолжать?" and normalized stop set ["нет", "не надо", "не продолжай", "хватит", "стоп", "отмена"]. Prefer paragraph/sentence boundary, then whitespace, then exact Unicode char boundary. Every source character belongs to exactly one chunk.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run: cargo test -p bridge-core reply::tests
 
 Expected: PASS; changing 850 to 851 or removing a refusal makes a test fail.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ~~~bash
 git add crates/bridge-core/src/reply.rs crates/bridge-core/src/lib.rs
@@ -190,7 +190,7 @@ pub trait HouseRuntime: Send + Sync {
 }
 ~~~
 
-- [ ] **Step 1: Write failing routing tests**
+- [x] **Step 1: Write failing routing tests**
 
 ~~~rust
 #[tokio::test]
@@ -215,17 +215,17 @@ async fn two_accounts_and_surfaces_resolve_to_one_thread() {
 
 Add a second test proving an enabled member with an unknown application gets PairingRequired while a stranger gets Unauthorized without a house name.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: cargo test -p bridge-core household house_store house_runtime
 
 Expected: FAIL with missing modules/types.
 
-- [ ] **Step 3: Implement types, traits and MemoryHouseholdStore**
+- [x] **Step 3: Implement types, traits and MemoryHouseholdStore**
 
 The fake enforces application_id → one house and never returns a house name to an unauthorized identity.
 
-- [ ] **Step 4: Run GREEN and commit**
+- [x] **Step 4: Run GREEN and commit**
 
 ~~~bash
 cargo test -p bridge-core household house_store house_runtime
@@ -259,21 +259,21 @@ impl StateCipher {
 pub struct PgHouseholdStore { pool: PgPool, cipher: StateCipher }
 ~~~
 
-- [ ] **Step 1: Write failing crypto tests**
+- [x] **Step 1: Write failing crypto tests**
 
 Roundtrip must return exact UTF-8 bytes. Flipping one ciphertext byte must fail authentication. Two seals of the same plaintext must produce different nonces and ciphertext.
 
-- [ ] **Step 2: Write failing SQLx tests**
+- [x] **Step 2: Write failing SQLx tests**
 
 Prove cross-house isolation, exact user/application binding, 600-second pairing expiry, 120-second pending expiry, 600-second continuation expiry, ciphertext absence of plaintext, and refusal to overwrite a non-null different codex_thread_id.
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 Run: cargo test -p bridge-server state_crypto house_store_pg
 
 Expected: FAIL because modules, migration and dependencies are absent.
 
-- [ ] **Step 4: Add minimum dependencies**
+- [x] **Step 4: Add minimum dependencies**
 
 ~~~toml
 chacha20poly1305 = "0.10"
@@ -285,11 +285,11 @@ rand = "0.9"
 
 Migration creates houses, house_members, surfaces, pairing_requests, pending_replies and continuations with foreign keys, unique surfaces.application_id, unique (house_id, yandex_user_id), BYTEA payload/nonce fields and TTL indexes. Pairing code hashes use HMAC-SHA256 keyed by STATE_ENCRYPTION_KEY.
 
-- [ ] **Step 5: Implement StateCipher and PgHouseholdStore**
+- [x] **Step 5: Implement StateCipher and PgHouseholdStore**
 
 STATE_ENCRYPTION_KEY is exactly 64 hex characters. Every ChaCha20-Poly1305 write uses a fresh 96-bit nonce. Resolution first checks enabled membership, then exact user/application binding.
 
-- [ ] **Step 6: Run GREEN and commit**
+- [x] **Step 6: Run GREEN and commit**
 
 ~~~bash
 cargo test -p bridge-server state_crypto house_store_pg
@@ -316,21 +316,21 @@ bridge-admin member disable --house ID --user-id ID
 bridge-admin surface disable --application-id ID
 ~~~
 
-- [ ] **Step 1: Write failing end-to-end CLI test**
+- [x] **Step 1: Write failing end-to-end CLI test**
 
 With disposable DATABASE_URL and STATE_ENCRYPTION_KEY: create house/member, insert pairing request through PgHouseholdStore, approve it through the binary, assert the exact surface resolves and another application does not.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: cargo test -p bridge-server --test admin_cli
 
 Expected: FAIL because bridge-admin does not exist.
 
-- [ ] **Step 3: Implement fixed std::env argument parser**
+- [x] **Step 3: Implement fixed std::env argument parser**
 
 Do not add a CLI framework. Reject missing/extra flags, require exact six digits, and never print raw Yandex IDs after success.
 
-- [ ] **Step 4: Run GREEN and commit**
+- [x] **Step 4: Run GREEN and commit**
 
 ~~~bash
 cargo test -p bridge-server --test admin_cli
@@ -364,25 +364,25 @@ pub struct CodexRuntime { config: CodexRuntimeConfig }
 
 CodexRuntime implements HouseRuntime.
 
-- [ ] **Step 1: Write failing duplex-transport test**
+- [x] **Step 1: Write failing duplex-transport test**
 
 Use tokio::io::duplex. Assert request order initialize → initialized → thread/start. Thread start contains absolute house cwd, permissions "alice-house-1", sandbox "read-only" and exact developerInstructions. Return thread-1, then assert turn/start receives one text UserInput and agentMessage/delta is concatenated until turn/completed.
 
-- [ ] **Step 2: Write failing denial/error tests**
+- [x] **Step 2: Write failing denial/error tests**
 
 commandExecution/requestApproval, fileChange/requestApproval and unknown server requests must receive denial or return RuntimeError; JSON-RPC errors, mismatched thread IDs and EOF never fabricate assistant text.
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 Run: cargo test -p codex-runtime
 
 Expected: FAIL because crate/client do not exist.
 
-- [ ] **Step 4: Implement minimal JSONL codec**
+- [x] **Step 4: Implement minimal JSONL codec**
 
 Support only initialize, initialized, thread/start, thread/resume, turn/start, agentMessage/delta, turn/completed and approval denial. Do not expose command/process/fs methods.
 
-- [ ] **Step 5: Run GREEN and schema check**
+- [x] **Step 5: Run GREEN and schema check**
 
 ~~~bash
 cargo test -p codex-runtime
@@ -393,7 +393,7 @@ rg 'thread/start|thread/resume|turn/start|agentMessage/delta|turn/completed' "$s
 
 Expected: tests PASS and methods appear in local Codex 0.149 schema. Spain schema remains a read-only canary gate.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ~~~bash
 git add Cargo.toml Cargo.lock crates/codex-runtime
@@ -431,17 +431,17 @@ pub struct HouseholdEngine {
 pub fn build_house_instructions(house: &HouseContext) -> String;
 ~~~
 
-- [ ] **Step 1: Write failing orchestration tests**
+- [x] **Step 1: Write failing orchestration tests**
 
 Prove two account/surface inputs resolved to one house call one thread; continuation consumes "включи свет" without a new runtime turn; stop clears and says "Хорошо."; 2800 ms timeout marks pending; only initiating application receives ready text; concurrent second surface gets Busy.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: cargo test -p bridge-core house_engine house_prompt
 
 Expected: FAIL because engine/prompt are absent.
 
-- [ ] **Step 3: Implement fixed state precedence**
+- [x] **Step 3: Implement fixed state precedence**
 
 ~~~text
 resolve surface
@@ -456,11 +456,11 @@ resolve surface
 
 Use DashMap<house_id, Arc<tokio::sync::Mutex<()>>>. Code-local ceiling: correct for one bridge replica. Measurable upgrade trigger is replica_count > 1; upgrade path is a Postgres advisory lock keyed by house ID.
 
-- [ ] **Step 4: Implement exact spec prompt**
+- [x] **Step 4: Implement exact spec prompt**
 
 Interpolate only house.name. Tests assert Russian response, 850-char default, current-house tools only, verified read-back, maximum one attention item and prohibition of high-risk devices.
 
-- [ ] **Step 5: Run GREEN and commit**
+- [x] **Step 5: Run GREEN and commit**
 
 ~~~bash
 cargo test -p bridge-core house_engine house_prompt
@@ -496,25 +496,25 @@ chunk_limit = 850
 pub enum SkillBackend { Legacy(Engine), Household(HouseholdEngine) }
 ~~~
 
-- [ ] **Step 1: Write failing config tests**
+- [x] **Step 1: Write failing config tests**
 
 Old config parses as legacy. Household mode requires absolute socket/cwd paths and chunk_limit <= 900, and does not resolve OpenAI API keys during household assembly.
 
-- [ ] **Step 2: Write failing webhook tests**
+- [x] **Step 2: Write failing webhook tests**
 
 Add application_id to fixtures. Prove wrong secret 404; stranger closes; unbound member receives pairing without house name; two account/surface requests hit one fake thread; two houses hit different threads; every text/tts is <= 1024.
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 Run: cargo test -p bridge-server config webhook
 
 Expected: FAIL because household wiring does not exist.
 
-- [ ] **Step 4: Implement backward-compatible backend selection**
+- [x] **Step 4: Implement backward-compatible backend selection**
 
 Household main constructs StateCipher, PgHouseholdStore, CodexRuntime and HouseholdEngine. Legacy main keeps build_engine. Logs contain only correlation ID and sanitized outcome.
 
-- [ ] **Step 5: Run GREEN and legacy regression**
+- [x] **Step 5: Run GREEN and legacy regression**
 
 ~~~bash
 cargo test -p bridge-server
@@ -523,7 +523,7 @@ cargo test --workspace
 
 Expected: new and legacy tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ~~~bash
 git add crates/bridge-server config.example.toml Cargo.lock
@@ -545,25 +545,25 @@ git commit -m "feat: wire household Codex mode into Alice webhook"
 **Interfaces:**
 - House-scoped MCP surface is exactly list_attention_items(), get_device_state(device_id), set_device_capability(device_id, capability, value).
 
-- [ ] **Step 1: Write failing fake Homey flow tests**
+- [x] **Step 1: Write failing fake Homey flow tests**
 
 Fixture one returns requested=true, observed=true, verified=true plus two warnings; final speech must confirm observed state and contain exactly one highest-priority warning. Fixture two returns verified=false; final speech must not say "включён".
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: cargo test -p codex-runtime --test homey_contract
 
 Expected: FAIL until protocol/prompt handling is complete.
 
-- [ ] **Step 3: Complete minimal tool lifecycle handling**
+- [x] **Step 3: Complete minimal tool lifecycle handling**
 
 Bridge observes normal MCP lifecycle but never handles Homey OAuth/tokens. Approval requests remain denied. The external gateway owns allowlist and read-back.
 
-- [ ] **Step 4: Document exact setup**
+- [x] **Step 4: Document exact setup**
 
 docs/household-setup.md covers: create house, add owner/member, share private Yandex link, bind each surface, start isolated app-server, register only house gateway, run read-only canary, revoke access, rollback without deleting thread.
 
-- [ ] **Step 5: Run final verification**
+- [x] **Step 5: Run final verification**
 
 ~~~bash
 cargo fmt --all -- --check
@@ -575,7 +575,7 @@ git status --short
 
 Expected: all checks PASS and worktree is clean after commit.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ~~~bash
 git add README.md docs config.example.toml crates/codex-runtime/tests/homey_contract.rs

@@ -71,9 +71,13 @@ fn parse_command(arguments: &[String]) -> Result<AdminCommand, AdminError> {
     match (namespace.as_str(), action.as_str()) {
         ("house", "create") => {
             let flags = parse_flags(flags, &["--name", "--homey-connector"])?;
+            let homey_connector = required(&flags, "--homey-connector")?;
+            if !valid_homey_connector(homey_connector) {
+                return Err(AdminError::InvalidArguments);
+            }
             Ok(AdminCommand::CreateHouse {
                 name: required(&flags, "--name")?.to_owned(),
-                homey_connector: required(&flags, "--homey-connector")?.to_owned(),
+                homey_connector: homey_connector.to_owned(),
             })
         }
         ("member", "add") => {
@@ -125,7 +129,9 @@ fn parse_flags<'a>(
     }
     let expected: HashSet<&str> = expected.iter().copied().collect();
     let mut parsed = HashMap::new();
-    for pair in arguments.chunks_exact(2) {
+    let (pairs, remainder) = arguments.as_chunks::<2>();
+    debug_assert!(remainder.is_empty());
+    for pair in pairs {
         let name = pair[0].as_str();
         let value = pair[1].as_str();
         if !expected.contains(name)
@@ -148,6 +154,13 @@ fn positive_id(value: &str) -> Result<i64, AdminError> {
         .ok()
         .filter(|value| *value > 0)
         .ok_or(AdminError::InvalidArguments)
+}
+
+fn valid_homey_connector(connector: &str) -> bool {
+    connector.starts_with("homey-")
+        && connector
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
 }
 
 async fn execute(command: AdminCommand, pool: PgPool) -> Result<(), AdminError> {
@@ -224,4 +237,27 @@ async fn execute(command: AdminCommand, pool: PgPool) -> Result<(), AdminError> 
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn house_connector_must_name_a_restricted_homey_gateway() {
+        let arguments = [
+            "house",
+            "create",
+            "--name",
+            "Дом",
+            "--homey-connector",
+            "github",
+        ]
+        .map(str::to_owned);
+
+        assert!(matches!(
+            parse_command(&arguments),
+            Err(AdminError::InvalidArguments)
+        ));
+    }
 }
