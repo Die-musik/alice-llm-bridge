@@ -8,6 +8,8 @@
 pub mod command;
 mod engine;
 mod error;
+pub mod house_engine;
+pub mod house_prompt;
 pub mod house_runtime;
 pub mod house_store;
 pub mod household;
@@ -23,6 +25,8 @@ pub mod testing;
 
 pub use engine::{Engine, EngineConfig};
 pub use error::{CoreError, Result};
+pub use house_engine::{HouseholdEngine, HouseholdEngineConfig, HouseholdInput, HouseholdReply};
+pub use house_prompt::build_house_instructions;
 pub use house_runtime::{HouseRuntime, RuntimeError, RuntimeResult};
 pub use house_store::{HouseholdStore, HouseholdStoreError, StoreResult};
 pub use household::{HouseContext, PendingReply, SurfaceIdentity, SurfaceResolution};

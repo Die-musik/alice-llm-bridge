@@ -11,9 +11,64 @@ use crate::store::{
     ConversationStore, ExchangeRecord, MessageRole, StoreError, StoredMessage, Summary, UsageStats,
 };
 use crate::{
+    house_runtime::{HouseRuntime, RuntimeError},
     house_store::{HouseholdStore, HouseholdStoreError},
     household::{HouseContext, PendingReply, SurfaceIdentity, SurfaceResolution},
 };
+
+pub struct ScriptedHouseRuntime {
+    pub delay: Duration,
+    pub reply: String,
+    pub thread_id: String,
+    pub start_calls: Mutex<Vec<(i64, String)>>,
+    pub turn_calls: Mutex<Vec<(String, String)>>,
+}
+
+impl ScriptedHouseRuntime {
+    pub fn replying(text: &str) -> Arc<Self> {
+        Arc::new(Self {
+            delay: Duration::ZERO,
+            reply: text.to_owned(),
+            thread_id: "thread-1".to_owned(),
+            start_calls: Mutex::new(Vec::new()),
+            turn_calls: Mutex::new(Vec::new()),
+        })
+    }
+
+    pub fn slow(text: &str, delay: Duration) -> Arc<Self> {
+        Arc::new(Self {
+            delay,
+            reply: text.to_owned(),
+            thread_id: "thread-1".to_owned(),
+            start_calls: Mutex::new(Vec::new()),
+            turn_calls: Mutex::new(Vec::new()),
+        })
+    }
+}
+
+#[async_trait::async_trait]
+impl HouseRuntime for ScriptedHouseRuntime {
+    async fn start_thread(
+        &self,
+        house: &HouseContext,
+        instructions: &str,
+    ) -> Result<String, RuntimeError> {
+        self.start_calls
+            .lock()
+            .expect("scripted runtime mutex poisoned")
+            .push((house.id, instructions.to_owned()));
+        Ok(self.thread_id.clone())
+    }
+
+    async fn turn(&self, thread_id: &str, utterance: &str) -> Result<String, RuntimeError> {
+        self.turn_calls
+            .lock()
+            .expect("scripted runtime mutex poisoned")
+            .push((thread_id.to_owned(), utterance.to_owned()));
+        tokio::time::sleep(self.delay).await;
+        Ok(self.reply.clone())
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct MemoryHouseholdStore {
@@ -116,10 +171,6 @@ impl HouseholdStore for MemoryHouseholdStore {
         let Some(_) = matching_houses.next() else {
             return Ok(SurfaceResolution::Unauthorized);
         };
-        if matching_houses.next().is_some() {
-            return Ok(SurfaceResolution::Unauthorized);
-        }
-
         Ok(SurfaceResolution::PairingRequired {
             spoken_code: "123456".to_owned(),
         })

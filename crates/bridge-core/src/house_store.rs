@@ -92,4 +92,22 @@ mod tests {
 
         assert!(result.is_err());
     }
+
+    #[tokio::test]
+    async fn multi_house_account_gets_neutral_pairing_instead_of_naming_a_house() {
+        let store = MemoryHouseholdStore::fixture()
+            .house(1, "Первый", None, "homey-1")
+            .house(2, "Второй", None, "homey-2")
+            .member(1, "OWNER")
+            .member(2, "OWNER");
+
+        let resolution = store
+            .resolve_surface(&SurfaceIdentity::new("OWNER", "new-station"))
+            .await
+            .unwrap();
+        assert!(matches!(
+            resolution,
+            SurfaceResolution::PairingRequired { spoken_code } if spoken_code.len() == 6
+        ));
+    }
 }
