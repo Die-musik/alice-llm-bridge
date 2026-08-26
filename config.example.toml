@@ -6,6 +6,7 @@ codex_socket = "/run/alice-codex/app-server.sock"
 codex_cwd_root = "/srv/alice/houses"
 permission_profile_prefix = "alice-house-"
 chunk_limit = 850
+homey_enabled = false
 
 [server]
 listen = "0.0.0.0:8080"

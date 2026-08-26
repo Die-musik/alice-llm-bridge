@@ -2,8 +2,8 @@
 
 Этот режим реализует правило «один дом — один постоянный чат». Все разрешённые
 Яндекс-аккаунты и колонки дома продолжают один Codex thread и общую бытовую
-историю. Разные дома получают разные thread, каталоги, permission profiles и
-Homey gateways.
+историю. Разные дома получают разные thread, каталоги и permission profiles.
+Homey gateways сохраняются как дополнительный, отдельно включаемый слой.
 
 В обычной речи название дома не используется. Оно нужно администратору только
 при создании дома и подтверждении первой привязки. После этого bridge сам
@@ -22,7 +22,19 @@ codex_socket = "/run/alice-codex/app-server.sock"
 codex_cwd_root = "/srv/alice/houses"
 permission_profile_prefix = "alice-house-"
 chunk_limit = 850
+homey_enabled = false
 ```
+
+`homey_enabled = false` — безопасный разговорный режим первого этапа: bridge
+не передаёт `mcp_servers` в Codex и не предлагает модели управление
+устройствами. Когда gateway конкретного дома настроен и проверен, Homey можно
+включить одним параметром `homey_enabled = true`; код и данные домов при этом
+не меняются.
+
+Сейчас этот флаг общий для одного процесса bridge. До ситуации, когда одному
+дому уже нужен Homey, а другой должен оставаться chat-only, его нужно перенести
+в настройки конкретного дома; текущий upgrade path — nullable boolean в
+`houses` и чтение флага вместе с `homey_connector_id`.
 
 Остальные legacy-секции пока остаются в файле для совместимости валидатора, но
 ключ провайдера в household mode не читается. Процессу нужны:
@@ -65,9 +77,10 @@ bridge выполняет HTTP Upgrade сам. Не публикуйте это�
 доступ к нему только группе bridge.
 
 В базовой конфигурации Codex отключите shell, web search, apps и все Homey MCP.
-Bridge повторяет запрет при каждом `thread/start` и `thread/resume`, затем
-включает только gateway из поля `homey_connector_id` текущего дома. Пример
-базовых ограничений:
+Bridge повторяет запрет при каждом `thread/start` и `thread/resume`. Пока
+`homey_enabled = false`, он не передаёт секцию `mcp_servers` вообще. После
+явного включения он добавляет только gateway из поля `homey_connector_id`
+текущего дома. Пример базовых ограничений:
 
 ```toml
 [features]
@@ -169,8 +182,10 @@ cargo run -p bridge-server --bin bridge-admin -- \
 3. Запустите один разговор без Homey и убедитесь, что ответ `thread/start`
    сообщает точный `activePermissionProfile = alice-house-N`, read-only sandbox
    и отсутствие network access. Bridge в противном случае закрывает запрос.
-4. Выполните только `get_device_state` и `list_attention_items`; проверьте, что
-   вызов другого gateway или неизвестного tool отклоняется.
+4. Пока `homey_enabled = false`, проверьте отсутствие `mcp_servers` в
+   `thread/start` и `thread/resume`. После отдельного включения Homey выполните
+   только `get_device_state` и `list_attention_items`; проверьте, что вызов
+   другого gateway или неизвестного tool отклоняется.
 5. Проверьте два аккаунта и две колонки одного дома: в таблице `houses` остаётся
    один `codex_thread_id`.
 

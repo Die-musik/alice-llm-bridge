@@ -25,7 +25,7 @@ pub(crate) fn thread_start_params(
     cwd: &str,
     permissions: &str,
     instructions: &str,
-    homey_connector: &str,
+    homey_connector: Option<&str>,
 ) -> Value {
     json!({
         "cwd": cwd,
@@ -40,7 +40,7 @@ pub(crate) fn thread_start_params(
 pub(crate) fn thread_resume_params(
     thread_id: &str,
     permissions: &str,
-    homey_connector: &str,
+    homey_connector: Option<&str>,
 ) -> Value {
     json!({
         "threadId": thread_id,
@@ -57,8 +57,8 @@ pub(crate) fn turn_start_params(thread_id: &str, utterance: &str) -> Value {
     })
 }
 
-fn isolated_house_config(homey_connector: &str) -> Value {
-    json!({
+fn isolated_house_config(homey_connector: Option<&str>) -> Value {
+    let mut config = json!({
         "features": {
             "shell_tool": false,
             "unified_exec": false,
@@ -70,9 +70,10 @@ fn isolated_house_config(homey_connector: &str) -> Value {
         },
         "apps": {
             "_default": {"enabled": false}
-        },
-        "mcp_servers": {
-            homey_connector: {"enabled": true}
         }
-    })
+    });
+    if let Some(homey_connector) = homey_connector {
+        config["mcp_servers"] = json!({homey_connector: {"enabled": true}});
+    }
+    config
 }

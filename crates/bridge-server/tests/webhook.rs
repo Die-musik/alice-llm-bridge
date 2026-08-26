@@ -69,6 +69,7 @@ fn household_state(
             HouseholdEngineConfig {
                 reply_budget: Duration::from_millis(200),
                 chunk_limit: 850,
+                homey_enabled: false,
             },
         ))),
         webhook_secret: "s3cret".to_owned(),

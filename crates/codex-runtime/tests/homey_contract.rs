@@ -9,6 +9,7 @@ fn runtime() -> CodexRuntime {
         socket_path: PathBuf::from("/run/alice-codex/app-server.sock"),
         cwd_root: PathBuf::from("/srv/alice/houses"),
         permission_profile_prefix: "alice-house-".to_owned(),
+        homey_enabled: true,
     })
     .unwrap()
 }

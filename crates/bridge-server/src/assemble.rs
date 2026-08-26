@@ -29,6 +29,7 @@ pub fn build_household_engine(
         HouseholdEngineConfig {
             reply_budget: Duration::from_millis(config.defaults.reply_budget_ms),
             chunk_limit: config.runtime.chunk_limit,
+            homey_enabled: config.runtime.homey_enabled,
         },
     ))
 }

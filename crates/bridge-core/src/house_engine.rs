@@ -15,6 +15,7 @@ const STILL_THINKING: &str = "Я ещё думаю. Спросите меня ч
 pub struct HouseholdEngineConfig {
     pub reply_budget: Duration,
     pub chunk_limit: usize,
+    pub homey_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,7 +122,7 @@ impl HouseholdEngine {
         let runtime = self.runtime.clone();
         let work_house = house.clone();
         let utterance = input.utterance;
-        let instructions = build_house_instructions(&house);
+        let instructions = build_house_instructions(&house, self.config.homey_enabled);
         let mut work = tokio::spawn(async move {
             let _guard = guard;
             let thread_id = if let Some(thread_id) = work_house.codex_thread_id.clone() {
@@ -254,6 +255,7 @@ mod tests {
         HouseholdEngineConfig {
             reply_budget,
             chunk_limit: 850,
+            homey_enabled: false,
         }
     }
 

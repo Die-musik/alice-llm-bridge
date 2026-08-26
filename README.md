@@ -30,9 +30,10 @@ approved accounts and devices. Backend written in Rust.
   Yandex account/application identity selects the home without a spoken name.
 - **Deterministic voice continuation** — replies are capped at 850 characters;
   any non-refusal utterance continues the next chunk.
-- **Restricted Homey control** — only three house-scoped tools are accepted,
-  mutations require read-back with `verified=true`, and dangerous device
-  classes are excluded.
+- **Optional restricted Homey control** — disabled by default for chat-only
+  operation; when explicitly enabled, only three house-scoped tools are
+  accepted, mutations require read-back with `verified=true`, and dangerous
+  device classes are excluded.
 - **Private by construction** — the skill stays in draft status in the
   Yandex Dialogs console (never published), the webhook path includes a
   secret segment, and an account allowlist rejects anyone else.

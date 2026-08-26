@@ -57,6 +57,10 @@ pub struct RuntimeConfig {
     pub permission_profile_prefix: String,
     #[serde(default = "default_chunk_limit")]
     pub chunk_limit: usize,
+    /// Phase-wide gate. Move this to a per-house setting before one house
+    /// needs Homey while another must remain chat-only.
+    #[serde(default)]
+    pub homey_enabled: bool,
 }
 
 impl Default for RuntimeConfig {
@@ -67,6 +71,7 @@ impl Default for RuntimeConfig {
             codex_cwd_root: None,
             permission_profile_prefix: default_permission_profile_prefix(),
             chunk_limit: default_chunk_limit(),
+            homey_enabled: false,
         }
     }
 }
@@ -330,6 +335,29 @@ chunk_limit = 850
         let config = AppConfig::from_toml(&household).unwrap();
         assert_eq!(config.runtime.mode, RuntimeMode::HouseholdCodex);
         assert_eq!(config.runtime.chunk_limit, 850);
+        assert!(!config.runtime.homey_enabled);
+    }
+
+    #[test]
+    fn household_runtime_can_explicitly_enable_homey() {
+        let household = format!(
+            r#"
+[runtime]
+mode = "household_codex"
+codex_socket = "/run/alice-codex/app-server.sock"
+codex_cwd_root = "/srv/alice/houses"
+homey_enabled = true
+
+{}"#,
+            sample()
+        );
+
+        assert!(
+            AppConfig::from_toml(&household)
+                .unwrap()
+                .runtime
+                .homey_enabled
+        );
     }
 
     #[test]

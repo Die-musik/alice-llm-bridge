@@ -10,6 +10,17 @@ fn runtime() -> CodexRuntime {
         socket_path: PathBuf::from("/run/alice-codex/app-server.sock"),
         cwd_root: PathBuf::from("/srv/alice/houses"),
         permission_profile_prefix: "alice-house-".to_owned(),
+        homey_enabled: false,
+    })
+    .unwrap()
+}
+
+fn homey_runtime() -> CodexRuntime {
+    CodexRuntime::new(CodexRuntimeConfig {
+        socket_path: PathBuf::from("/run/alice-codex/app-server.sock"),
+        cwd_root: PathBuf::from("/srv/alice/houses"),
+        permission_profile_prefix: "alice-house-".to_owned(),
+        homey_enabled: true,
     })
     .unwrap()
 }
@@ -69,7 +80,7 @@ async fn initialize(
 #[tokio::test]
 async fn start_thread_uses_house_cwd_permission_profile_and_instructions() {
     let (client, server) = tokio::io::duplex(32 * 1024);
-    let runtime = runtime();
+    let runtime = homey_runtime();
     let task = tokio::spawn(async move {
         runtime
             .start_thread_on(client, &house(), "HOUSE INSTRUCTIONS")
@@ -105,6 +116,35 @@ async fn start_thread_uses_house_cwd_permission_profile_and_instructions() {
         request["params"]["config"]["mcp_servers"]["homey-mother"]["enabled"],
         true
     );
+    write_message(
+        &mut write,
+        json!({"id": request["id"], "result": {
+            "thread": {"id": "thread-1"},
+            "activePermissionProfile": {"id": "alice-house-1"},
+            "sandbox": {"type": "readOnly", "networkAccess": false}
+        }}),
+    )
+    .await;
+
+    assert_eq!(task.await.unwrap().unwrap(), "thread-1");
+}
+
+#[tokio::test]
+async fn chat_only_start_does_not_enable_any_mcp_server() {
+    let (client, server) = tokio::io::duplex(32 * 1024);
+    let runtime = runtime();
+    let task = tokio::spawn(async move {
+        runtime
+            .start_thread_on(client, &house(), "HOUSE INSTRUCTIONS")
+            .await
+    });
+    let (read, mut write) = tokio::io::split(server);
+    let mut read = BufReader::new(read);
+    initialize(&mut read, &mut write).await;
+
+    let request = read_message(&mut read).await;
+    assert_eq!(request["method"], "thread/start");
+    assert!(request["params"]["config"].get("mcp_servers").is_none());
     write_message(
         &mut write,
         json!({"id": request["id"], "result": {
@@ -161,10 +201,7 @@ async fn turn_resumes_thread_and_concatenates_only_matching_deltas() {
     assert_eq!(resume["method"], "thread/resume");
     assert_eq!(resume["params"]["threadId"], "thread-1");
     assert_eq!(resume["params"]["permissions"], "alice-house-1");
-    assert_eq!(
-        resume["params"]["config"]["mcp_servers"]["homey-mother"]["enabled"],
-        true
-    );
+    assert!(resume["params"]["config"].get("mcp_servers").is_none());
     write_message(
         &mut write,
         json!({"id": resume["id"], "result": {

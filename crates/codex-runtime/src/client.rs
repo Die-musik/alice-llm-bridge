@@ -115,7 +115,7 @@ where
         &mut self,
         thread_id: &str,
         turn_id: &str,
-        homey_connector: &str,
+        homey_connector: Option<&str>,
     ) -> Result<String> {
         let mut assistant_text = String::new();
         let mut unverified_homey_mutation = false;
@@ -318,7 +318,7 @@ fn observe_homey_tool(
     message: &Value,
     thread_id: &str,
     turn_id: &str,
-    homey_connector: &str,
+    homey_connector: Option<&str>,
     unverified_mutation: &mut bool,
 ) -> Result<()> {
     require_turn(message, thread_id, turn_id)?;
@@ -329,7 +329,7 @@ fn observe_homey_tool(
     if message
         .pointer("/params/item/server")
         .and_then(Value::as_str)
-        != Some(homey_connector)
+        != homey_connector
     {
         return Err(CodexRuntimeError::ForbiddenRequest);
     }

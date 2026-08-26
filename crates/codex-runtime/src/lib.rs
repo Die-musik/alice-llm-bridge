@@ -25,6 +25,7 @@ pub struct CodexRuntimeConfig {
     pub socket_path: PathBuf,
     pub cwd_root: PathBuf,
     pub permission_profile_prefix: String,
+    pub homey_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -85,7 +86,7 @@ impl CodexRuntime {
                 "house id must be positive",
             ));
         }
-        validate_homey_connector(&house.homey_connector_id)?;
+        let homey_connector = self.homey_connector(house)?;
         initialize(client).await?;
         let cwd = self.config.cwd_root.join(house.id.to_string());
         let cwd = cwd
@@ -95,7 +96,7 @@ impl CodexRuntime {
         let result = client
             .request(
                 THREAD_START,
-                thread_start_params(cwd, &permissions, instructions, &house.homey_connector_id),
+                thread_start_params(cwd, &permissions, instructions, homey_connector),
             )
             .await?;
         validate_permission_result(&result, Some(&permissions))?;
@@ -139,13 +140,13 @@ impl CodexRuntime {
                 "house id must be positive",
             ));
         }
-        validate_homey_connector(&house.homey_connector_id)?;
+        let homey_connector = self.homey_connector(house)?;
         initialize(client).await?;
         let permissions = format!("{}{}", self.config.permission_profile_prefix, house.id);
         let resumed = client
             .request(
                 THREAD_RESUME,
-                thread_resume_params(thread_id, &permissions, &house.homey_connector_id),
+                thread_resume_params(thread_id, &permissions, homey_connector),
             )
             .await?;
         validate_permission_result(&resumed, Some(&permissions))?;
@@ -164,8 +165,16 @@ impl CodexRuntime {
             .await?;
         let turn_id = required_string(&started, "/turn/id", "turn/start response has no turn id")?;
         client
-            .collect_turn(thread_id, &turn_id, &house.homey_connector_id)
+            .collect_turn(thread_id, &turn_id, homey_connector)
             .await
+    }
+
+    fn homey_connector<'a>(&self, house: &'a HouseContext) -> Result<Option<&'a str>> {
+        if !self.config.homey_enabled {
+            return Ok(None);
+        }
+        validate_homey_connector(&house.homey_connector_id)?;
+        Ok(Some(&house.homey_connector_id))
     }
 }
 
