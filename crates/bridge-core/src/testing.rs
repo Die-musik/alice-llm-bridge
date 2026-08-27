@@ -20,7 +20,8 @@ pub struct ScriptedHouseRuntime {
     pub delay: Duration,
     pub reply: String,
     pub thread_id: String,
-    pub start_calls: Mutex<Vec<(i64, String)>>,
+    pub turn_error: Option<String>,
+    pub start_calls: Mutex<Vec<(i64, String, String)>>,
     pub turn_calls: Mutex<Vec<(String, String)>>,
 }
 
@@ -30,6 +31,7 @@ impl ScriptedHouseRuntime {
             delay: Duration::ZERO,
             reply: text.to_owned(),
             thread_id: "thread-1".to_owned(),
+            turn_error: None,
             start_calls: Mutex::new(Vec::new()),
             turn_calls: Mutex::new(Vec::new()),
         })
@@ -40,6 +42,18 @@ impl ScriptedHouseRuntime {
             delay,
             reply: text.to_owned(),
             thread_id: "thread-1".to_owned(),
+            turn_error: None,
+            start_calls: Mutex::new(Vec::new()),
+            turn_calls: Mutex::new(Vec::new()),
+        })
+    }
+
+    pub fn failing(message: &str) -> Arc<Self> {
+        Arc::new(Self {
+            delay: Duration::ZERO,
+            reply: String::new(),
+            thread_id: "thread-1".to_owned(),
+            turn_error: Some(message.to_owned()),
             start_calls: Mutex::new(Vec::new()),
             turn_calls: Mutex::new(Vec::new()),
         })
@@ -48,16 +62,21 @@ impl ScriptedHouseRuntime {
 
 #[async_trait::async_trait]
 impl HouseRuntime for ScriptedHouseRuntime {
-    async fn start_thread(
+    async fn start_thread_and_turn(
         &self,
         house: &HouseContext,
         instructions: &str,
-    ) -> Result<String, RuntimeError> {
+        utterance: &str,
+    ) -> Result<(String, String), RuntimeError> {
         self.start_calls
             .lock()
             .expect("scripted runtime mutex poisoned")
-            .push((house.id, instructions.to_owned()));
-        Ok(self.thread_id.clone())
+            .push((house.id, instructions.to_owned(), utterance.to_owned()));
+        tokio::time::sleep(self.delay).await;
+        if let Some(message) = &self.turn_error {
+            return Err(RuntimeError(message.clone()));
+        }
+        Ok((self.thread_id.clone(), self.reply.clone()))
     }
 
     async fn turn(
@@ -71,6 +90,9 @@ impl HouseRuntime for ScriptedHouseRuntime {
             .expect("scripted runtime mutex poisoned")
             .push((thread_id.to_owned(), utterance.to_owned()));
         tokio::time::sleep(self.delay).await;
+        if let Some(message) = &self.turn_error {
+            return Err(RuntimeError(message.clone()));
+        }
         Ok(self.reply.clone())
     }
 }

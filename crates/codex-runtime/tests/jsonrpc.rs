@@ -164,6 +164,71 @@ async fn chat_only_start_does_not_enable_any_mcp_server() {
 }
 
 #[tokio::test]
+async fn first_turn_starts_on_the_thread_start_connection_without_resume() {
+    let (client, server) = tokio::io::duplex(32 * 1024);
+    let runtime = runtime();
+    let task = tokio::spawn(async move {
+        runtime
+            .start_thread_and_turn_on(client, &house(), "HOUSE INSTRUCTIONS", "Первый вопрос")
+            .await
+    });
+    let (read, mut write) = tokio::io::split(server);
+    let mut read = BufReader::new(read);
+    initialize(&mut read, &mut write).await;
+
+    let start = read_message(&mut read).await;
+    assert_eq!(start["method"], "thread/start");
+    assert!(start["params"]["config"].get("mcp_servers").is_none());
+    assert!(
+        start["params"]["config"]["tools"]
+            .get("view_image")
+            .is_none()
+    );
+    write_message(
+        &mut write,
+        json!({"id": start["id"], "result": {
+            "thread": {"id": "thread-1"},
+            "activePermissionProfile": {"id": "alice-house-1"},
+            "sandbox": {"type": "readOnly", "networkAccess": false}
+        }}),
+    )
+    .await;
+
+    let turn = read_message(&mut read).await;
+    assert_eq!(turn["method"], "turn/start");
+    assert_eq!(turn["params"]["threadId"], "thread-1");
+    assert_eq!(
+        turn["params"]["input"],
+        json!([{"type": "text", "text": "Первый вопрос"}])
+    );
+    write_message(
+        &mut write,
+        json!({"id": turn["id"], "result": {"turn": {"id": "turn-1"}}}),
+    )
+    .await;
+    write_message(
+        &mut write,
+        json!({"method": "item/agentMessage/delta", "params": {
+            "threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1",
+            "delta": "Первый ответ"
+        }}),
+    )
+    .await;
+    write_message(
+        &mut write,
+        json!({"method": "turn/completed", "params": {
+            "threadId": "thread-1", "turn": {"id": "turn-1", "status": "completed"}
+        }}),
+    )
+    .await;
+
+    assert_eq!(
+        task.await.unwrap().unwrap(),
+        ("thread-1".to_owned(), "Первый ответ".to_owned())
+    );
+}
+
+#[tokio::test]
 async fn start_thread_rejects_wrong_or_writable_permission_profile() {
     let (client, server) = tokio::io::duplex(32 * 1024);
     let runtime = runtime();
@@ -182,6 +247,58 @@ async fn start_thread_rejects_wrong_or_writable_permission_profile() {
             "thread": {"id": "thread-1"},
             "activePermissionProfile": {"id": "alice-house-99"},
             "sandbox": {"type": "workspaceWrite", "networkAccess": false}
+        }}),
+    )
+    .await;
+
+    assert!(task.await.unwrap().is_err());
+}
+
+#[tokio::test]
+async fn start_thread_rejects_missing_network_isolation_state() {
+    let (client, server) = tokio::io::duplex(32 * 1024);
+    let runtime = runtime();
+    let task = tokio::spawn(async move {
+        runtime
+            .start_thread_on(client, &house(), "HOUSE INSTRUCTIONS")
+            .await
+    });
+    let (read, mut write) = tokio::io::split(server);
+    let mut read = BufReader::new(read);
+    initialize(&mut read, &mut write).await;
+    let request = read_message(&mut read).await;
+    write_message(
+        &mut write,
+        json!({"id": request["id"], "result": {
+            "thread": {"id": "thread-1"},
+            "activePermissionProfile": {"id": "alice-house-1"},
+            "sandbox": {"type": "readOnly"}
+        }}),
+    )
+    .await;
+
+    assert!(task.await.unwrap().is_err());
+}
+
+#[tokio::test]
+async fn start_thread_rejects_empty_thread_id() {
+    let (client, server) = tokio::io::duplex(32 * 1024);
+    let runtime = runtime();
+    let task = tokio::spawn(async move {
+        runtime
+            .start_thread_on(client, &house(), "HOUSE INSTRUCTIONS")
+            .await
+    });
+    let (read, mut write) = tokio::io::split(server);
+    let mut read = BufReader::new(read);
+    initialize(&mut read, &mut write).await;
+    let request = read_message(&mut read).await;
+    write_message(
+        &mut write,
+        json!({"id": request["id"], "result": {
+            "thread": {"id": ""},
+            "activePermissionProfile": {"id": "alice-house-1"},
+            "sandbox": {"type": "readOnly", "networkAccess": false}
         }}),
     )
     .await;

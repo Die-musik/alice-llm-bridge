@@ -8,8 +8,12 @@ pub struct RuntimeError(pub String);
 
 #[async_trait::async_trait]
 pub trait HouseRuntime: Send + Sync {
-    async fn start_thread(&self, house: &HouseContext, instructions: &str)
-    -> RuntimeResult<String>;
+    async fn start_thread_and_turn(
+        &self,
+        house: &HouseContext,
+        instructions: &str,
+        utterance: &str,
+    ) -> RuntimeResult<(String, String)>;
 
     async fn turn(
         &self,

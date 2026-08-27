@@ -125,23 +125,22 @@ impl HouseholdEngine {
         let instructions = build_house_instructions(&house, self.config.homey_enabled);
         let mut work = tokio::spawn(async move {
             let _guard = guard;
-            let thread_id = if let Some(thread_id) = work_house.codex_thread_id.clone() {
-                thread_id
+            if let Some(thread_id) = work_house.codex_thread_id.clone() {
+                runtime
+                    .turn(&work_house, &thread_id, &utterance)
+                    .await
+                    .map_err(|_| ())
             } else {
-                let thread_id = runtime
-                    .start_thread(&work_house, &instructions)
+                let (thread_id, answer) = runtime
+                    .start_thread_and_turn(&work_house, &instructions, &utterance)
                     .await
                     .map_err(|_| ())?;
                 store
                     .save_thread_id(work_house.id, &thread_id)
                     .await
                     .map_err(|_| ())?;
-                thread_id
-            };
-            runtime
-                .turn(&work_house, &thread_id, &utterance)
-                .await
-                .map_err(|_| ())
+                Ok(answer)
+            }
         });
 
         match tokio::time::timeout(self.config.reply_budget, &mut work).await {
@@ -228,7 +227,7 @@ mod tests {
 
     use super::{HouseholdEngine, HouseholdEngineConfig, HouseholdInput, HouseholdReply};
     use crate::{
-        HouseholdStore, PendingReply, SurfaceIdentity,
+        HouseholdStore, PendingReply, SurfaceIdentity, SurfaceResolution,
         testing::{MemoryHouseholdStore, ScriptedHouseRuntime},
     };
 
@@ -263,7 +262,11 @@ mod tests {
     async fn two_accounts_share_one_started_thread() {
         let store = two_surface_store(None);
         let runtime = ScriptedHouseRuntime::replying("Короткий ответ");
-        let engine = HouseholdEngine::new(store, runtime.clone(), config(Duration::from_secs(1)));
+        let engine = HouseholdEngine::new(
+            store.clone(),
+            runtime.clone(),
+            config(Duration::from_secs(1)),
+        );
 
         assert_eq!(
             engine
@@ -271,6 +274,14 @@ mod tests {
                 .await,
             HouseholdReply::Say("Короткий ответ".to_owned())
         );
+        let SurfaceResolution::Bound(house) = store
+            .resolve_surface(&SurfaceIdentity::new("OWNER", "owner-station"))
+            .await
+            .unwrap()
+        else {
+            panic!("expected bound house")
+        };
+        assert_eq!(house.codex_thread_id.as_deref(), Some("thread-1"));
         assert_eq!(
             engine
                 .respond(input("MOTHER", "mother-station", "Второй вопрос"))
@@ -280,8 +291,37 @@ mod tests {
 
         assert_eq!(runtime.start_calls.lock().unwrap().len(), 1);
         let turns = runtime.turn_calls.lock().unwrap();
-        assert_eq!(turns.len(), 2);
+        assert_eq!(turns.len(), 1);
         assert!(turns.iter().all(|(thread_id, _)| thread_id == "thread-1"));
+    }
+
+    #[tokio::test]
+    async fn failed_first_turn_does_not_persist_thread_id() {
+        let store = two_surface_store(None);
+        let runtime = ScriptedHouseRuntime::failing("first turn failed");
+        let engine = HouseholdEngine::new(
+            store.clone(),
+            runtime.clone(),
+            config(Duration::from_secs(1)),
+        );
+
+        assert_eq!(
+            engine
+                .respond(input("OWNER", "owner-station", "Первый вопрос"))
+                .await,
+            HouseholdReply::InternalError
+        );
+
+        let SurfaceResolution::Bound(house) = store
+            .resolve_surface(&SurfaceIdentity::new("OWNER", "owner-station"))
+            .await
+            .unwrap()
+        else {
+            panic!("expected bound house")
+        };
+        assert_eq!(house.codex_thread_id, None);
+        assert_eq!(runtime.start_calls.lock().unwrap().len(), 1);
+        assert!(runtime.turn_calls.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

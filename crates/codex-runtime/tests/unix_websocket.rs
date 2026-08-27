@@ -66,6 +66,29 @@ async fn real_runtime_upgrades_the_unix_socket_to_websocket() {
             }}),
         )
         .await;
+        let turn = receive_json(&mut socket).await;
+        assert_eq!(turn["method"], "turn/start");
+        assert_eq!(turn["params"]["threadId"], "thread-ws");
+        send_json(
+            &mut socket,
+            json!({"id": turn["id"], "result": {"turn": {"id": "turn-ws"}}}),
+        )
+        .await;
+        send_json(
+            &mut socket,
+            json!({"method": "item/agentMessage/delta", "params": {
+                "threadId": "thread-ws", "turnId": "turn-ws", "itemId": "item-ws",
+                "delta": "Первый ответ"
+            }}),
+        )
+        .await;
+        send_json(
+            &mut socket,
+            json!({"method": "turn/completed", "params": {
+                "threadId": "thread-ws", "turn": {"id": "turn-ws", "status": "completed"}
+            }}),
+        )
+        .await;
     });
 
     let runtime = CodexRuntime::new(CodexRuntimeConfig {
@@ -84,10 +107,10 @@ async fn real_runtime_upgrades_the_unix_socket_to_websocket() {
 
     assert_eq!(
         runtime
-            .start_thread(&house, "HOUSE INSTRUCTIONS")
+            .start_thread_and_turn(&house, "HOUSE INSTRUCTIONS", "Первый вопрос")
             .await
             .unwrap(),
-        "thread-ws"
+        ("thread-ws".to_owned(), "Первый ответ".to_owned())
     );
     server.await.unwrap();
     std::fs::remove_file(socket_path).unwrap();
