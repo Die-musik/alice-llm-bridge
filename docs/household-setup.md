@@ -90,7 +90,6 @@ skill_mcp_dependency_install = false
 
 [tools]
 web_search = false
-view_image = false
 
 [apps._default]
 enabled = false

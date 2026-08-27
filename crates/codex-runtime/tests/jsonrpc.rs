@@ -107,7 +107,12 @@ async fn start_thread_uses_house_cwd_permission_profile_and_instructions() {
         false
     );
     assert_eq!(request["params"]["config"]["tools"]["web_search"], false);
-    assert_eq!(request["params"]["config"]["tools"]["view_image"], false);
+    assert!(
+        request["params"]["config"]["tools"]
+            .get("view_image")
+            .is_none(),
+        "Codex 0.149 rejects tools.view_image in per-thread config overrides"
+    );
     assert_eq!(
         request["params"]["config"]["apps"]["_default"]["enabled"],
         false

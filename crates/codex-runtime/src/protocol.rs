@@ -65,8 +65,7 @@ fn isolated_house_config(homey_connector: Option<&str>) -> Value {
             "skill_mcp_dependency_install": false
         },
         "tools": {
-            "web_search": false,
-            "view_image": false
+            "web_search": false
         },
         "apps": {
             "_default": {"enabled": false}
