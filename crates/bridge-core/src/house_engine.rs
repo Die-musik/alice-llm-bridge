@@ -125,20 +125,27 @@ impl HouseholdEngine {
         let instructions = build_house_instructions(&house, self.config.homey_enabled);
         let mut work = tokio::spawn(async move {
             let _guard = guard;
+            let house_id = work_house.id;
             if let Some(thread_id) = work_house.codex_thread_id.clone() {
                 runtime
                     .turn(&work_house, &thread_id, &utterance)
                     .await
-                    .map_err(|_| ())
+                    .map_err(|error| {
+                        tracing::warn!(house_id, error = %error, "household runtime turn failed");
+                    })
             } else {
                 let (thread_id, answer) = runtime
                     .start_thread_and_turn(&work_house, &instructions, &utterance)
                     .await
-                    .map_err(|_| ())?;
+                    .map_err(|error| {
+                        tracing::warn!(house_id, error = %error, "household runtime first turn failed");
+                    })?;
                 store
-                    .save_thread_id(work_house.id, &thread_id)
+                    .save_thread_id(house_id, &thread_id)
                     .await
-                    .map_err(|_| ())?;
+                    .map_err(|error| {
+                        tracing::warn!(house_id, error = %error, "household thread persistence failed");
+                    })?;
                 Ok(answer)
             }
         });
