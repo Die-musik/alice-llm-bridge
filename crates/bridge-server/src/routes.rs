@@ -97,6 +97,7 @@ async fn webhook(
 fn household_response(reply: HouseholdReply) -> Response {
     let response = match reply {
         HouseholdReply::Say(text) => WebhookResponse::say(text),
+        HouseholdReply::Deferred => WebhookResponse::say_and_close("Секунду."),
         HouseholdReply::Refuse => WebhookResponse::say_and_close(HOUSEHOLD_REFUSAL),
         HouseholdReply::Pairing(code) => {
             WebhookResponse::say(format!("Код привязки: {code}. Сообщите его владельцу."))

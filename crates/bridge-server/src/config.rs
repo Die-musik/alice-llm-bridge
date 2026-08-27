@@ -65,6 +65,8 @@ pub struct RuntimeConfig {
     /// needs Homey while another must remain chat-only.
     #[serde(default)]
     pub homey_enabled: bool,
+    #[serde(default)]
+    pub voice_return: VoiceReturnConfig,
 }
 
 impl Default for RuntimeConfig {
@@ -78,8 +80,30 @@ impl Default for RuntimeConfig {
             permission_profile_prefix: default_permission_profile_prefix(),
             chunk_limit: default_chunk_limit(),
             homey_enabled: false,
+            voice_return: VoiceReturnConfig::default(),
         }
     }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VoiceReturnConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub activation_name: String,
+    #[serde(default)]
+    pub x_token_env: String,
+    #[serde(default)]
+    pub targets: Vec<VoiceReturnTargetConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VoiceReturnTargetConfig {
+    pub application_id_env: String,
+    pub device_id_env: String,
+    pub scenario_name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -213,6 +237,23 @@ impl AppConfig {
                     ));
                 }
             }
+            if self.runtime.voice_return.enabled {
+                let voice = &self.runtime.voice_return;
+                if voice.activation_name.trim().is_empty()
+                    || !valid_env_name(&voice.x_token_env)
+                    || voice.targets.is_empty()
+                    || voice.targets.iter().any(|target| {
+                        !valid_env_name(&target.application_id_env)
+                            || !valid_env_name(&target.device_id_env)
+                            || target.scenario_name.trim().is_empty()
+                    })
+                {
+                    return Err(ConfigError::Invalid(
+                        "enabled voice_return requires an activation name, secret environment name and valid targets"
+                            .to_owned(),
+                    ));
+                }
+            }
         }
         for preset in [&self.models.fast, &self.models.smart] {
             if !self.providers.contains_key(&preset.provider) {
@@ -242,6 +283,13 @@ impl AppConfig {
         }
         Ok(())
     }
+}
+
+fn valid_env_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.chars().all(|character| {
+            character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
+        })
 }
 
 fn default_context_window() -> usize {
@@ -404,6 +452,62 @@ homey_enabled = true
                 .runtime
                 .homey_enabled
         );
+    }
+
+    #[test]
+    fn household_runtime_parses_bounded_voice_return_targets() {
+        let household = format!(
+            r#"
+[runtime]
+mode = "household_codex"
+codex_socket = "/run/alice-codex/app-server.sock"
+codex_cwd_root = "/srv/alice/houses"
+
+[runtime.voice_return]
+enabled = true
+activation_name = "Искусственный интеллект"
+x_token_env = "YANDEX_STATION_X_TOKEN"
+
+[[runtime.voice_return.targets]]
+application_id_env = "ALICE_LIVING_ROOM_APPLICATION_ID"
+device_id_env = "YANDEX_LIVING_ROOM_DEVICE_ID"
+scenario_name = "Соня GPT — гостиная"
+
+{}"#,
+            sample()
+        );
+
+        let config = AppConfig::from_toml(&household).unwrap();
+        assert!(config.runtime.voice_return.enabled);
+        assert_eq!(config.runtime.voice_return.targets.len(), 1);
+        assert_eq!(
+            config.runtime.voice_return.targets[0].scenario_name,
+            "Соня GPT — гостиная"
+        );
+    }
+
+    #[test]
+    fn enabled_voice_return_requires_a_target_and_secret_environment_name() {
+        let household = format!(
+            r#"
+[runtime]
+mode = "household_codex"
+codex_socket = "/run/alice-codex/app-server.sock"
+codex_cwd_root = "/srv/alice/houses"
+
+[runtime.voice_return]
+enabled = true
+activation_name = "Искусственный интеллект"
+x_token_env = ""
+
+{}"#,
+            sample()
+        );
+
+        assert!(matches!(
+            AppConfig::from_toml(&household),
+            Err(ConfigError::Invalid(_))
+        ));
     }
 
     #[test]

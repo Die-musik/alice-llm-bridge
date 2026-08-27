@@ -22,6 +22,7 @@ mod prompt;
 pub mod reply;
 mod store;
 pub mod testing;
+mod voice_return;
 
 pub use engine::{Engine, EngineConfig};
 pub use error::{CoreError, Result};
@@ -38,3 +39,4 @@ pub use prompt::{PromptContext, build_system_prompt};
 pub use store::{
     ConversationStore, ExchangeRecord, MessageRole, StoreError, StoredMessage, Summary, UsageStats,
 };
+pub use voice_return::{DisabledVoiceReturn, VoiceReturn};

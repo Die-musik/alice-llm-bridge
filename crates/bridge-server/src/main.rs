@@ -3,12 +3,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Context;
-use bridge_server::assemble::{build_engine, build_household_engine};
+use bridge_core::{DisabledVoiceReturn, VoiceReturn};
+use bridge_server::assemble::{build_engine, build_household_engine_with_voice_return};
 use bridge_server::config::{AppConfig, RuntimeMode};
 use bridge_server::house_store_pg::PgHouseholdStore;
 use bridge_server::routes::{AppState, SkillBackend, router};
 use bridge_server::state_crypto::StateCipher;
 use bridge_server::store_pg::PgStore;
+use bridge_server::voice_return::{
+    YandexVoiceReturn, YandexVoiceReturnConfig, YandexVoiceReturnTarget,
+};
 use codex_runtime::{CodexRuntime, CodexRuntimeConfig};
 use sqlx::postgres::PgPoolOptions;
 use tracing_subscriber::EnvFilter;
@@ -65,10 +69,49 @@ async fn main() -> anyhow::Result<()> {
                 homey_enabled: config.runtime.homey_enabled,
             })
             .context("invalid Codex runtime config")?;
-            SkillBackend::Household(Arc::new(build_household_engine(
+            let voice_return: Arc<dyn VoiceReturn> = if config.runtime.voice_return.enabled {
+                let settings = &config.runtime.voice_return;
+                let x_token = std::env::var(&settings.x_token_env)
+                    .with_context(|| format!("{} must be set", settings.x_token_env))?;
+                let targets = settings
+                    .targets
+                    .iter()
+                    .map(|target| {
+                        Ok(YandexVoiceReturnTarget {
+                            application_id: std::env::var(&target.application_id_env)
+                                .with_context(|| {
+                                    format!("{} must be set", target.application_id_env)
+                                })?,
+                            device_id: std::env::var(&target.device_id_env)
+                                .with_context(|| format!("{} must be set", target.device_id_env))?,
+                            scenario_name: target.scenario_name.clone(),
+                        })
+                    })
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+                match YandexVoiceReturn::connect(YandexVoiceReturnConfig {
+                    x_token,
+                    activation_name: settings.activation_name.clone(),
+                    targets,
+                })
+                .await
+                {
+                    Ok(voice_return) => Arc::new(voice_return),
+                    Err(error) => {
+                        tracing::warn!(
+                            error = %error,
+                            "automatic Alice voice return is unavailable; using manual recovery"
+                        );
+                        Arc::new(DisabledVoiceReturn)
+                    }
+                }
+            } else {
+                Arc::new(DisabledVoiceReturn)
+            };
+            SkillBackend::Household(Arc::new(build_household_engine_with_voice_return(
                 &config,
                 Arc::new(PgHouseholdStore::new(pool.clone(), cipher)),
                 Arc::new(codex),
+                voice_return,
             )?))
         }
     };

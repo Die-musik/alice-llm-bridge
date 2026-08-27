@@ -9,7 +9,7 @@ use bridge_core::testing::{
 };
 use bridge_core::{
     Engine, EngineConfig, FamilyRoster, HouseholdEngine, HouseholdEngineConfig, ModelPreset,
-    ModelRegistry, Profile, ProfileRole, phrases,
+    ModelRegistry, Profile, ProfileRole, VoiceReturn, phrases,
 };
 use bridge_server::routes::{AppState, GREETING, SkillBackend, router};
 use tower::util::ServiceExt;
@@ -74,6 +74,19 @@ fn household_state(
         ))),
         webhook_secret: "s3cret".to_owned(),
         allowed_user_ids: HashSet::new(),
+    }
+}
+
+struct SupportedVoiceReturn;
+
+#[async_trait::async_trait]
+impl VoiceReturn for SupportedVoiceReturn {
+    fn supports(&self, application_id: &str) -> bool {
+        application_id == "owner-station"
+    }
+
+    async fn answer_ready(&self, _application_id: &str) -> Result<(), String> {
+        Ok(())
     }
 }
 
@@ -203,6 +216,41 @@ async fn slow_answer_is_deferred_across_requests() {
         second["response"]["text"],
         serde_json::json!("готовый ответ")
     );
+}
+
+#[tokio::test]
+async fn automatic_voice_return_closes_the_initial_skill_session() {
+    let store = Arc::new(
+        MemoryHouseholdStore::fixture()
+            .house(1, "Дом", Some("thread-1"), "homey-1")
+            .member(1, "OWNER")
+            .surface(1, "OWNER", "owner-station"),
+    );
+    let engine = HouseholdEngine::with_voice_return(
+        store,
+        ScriptedHouseRuntime::slow("Готовый ответ", Duration::from_millis(40)),
+        HouseholdEngineConfig {
+            reply_budget: Duration::from_millis(5),
+            chunk_limit: 850,
+            homey_enabled: false,
+        },
+        Arc::new(SupportedVoiceReturn),
+    );
+    let app = router(AppState {
+        backend: SkillBackend::Household(Arc::new(engine)),
+        webhook_secret: "s3cret".to_owned(),
+        allowed_user_ids: HashSet::new(),
+    });
+
+    let (_, body) = post(
+        app,
+        "s3cret",
+        alice_request_for("OWNER", "owner-station", "Сложный вопрос", false),
+    )
+    .await;
+
+    assert_eq!(body["response"]["text"], serde_json::json!("Секунду."));
+    assert_eq!(body["response"]["end_session"], serde_json::json!(true));
 }
 
 #[tokio::test]

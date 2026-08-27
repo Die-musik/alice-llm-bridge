@@ -226,19 +226,25 @@ impl HouseholdStore for MemoryHouseholdStore {
         Ok(())
     }
 
-    async fn poll_pending(
+    async fn take_pending(
         &self,
         house_id: i64,
         application_id: &str,
     ) -> Result<PendingReply, HouseholdStoreError> {
-        Ok(self
-            .household
-            .lock()
-            .expect("memory store poisoned")
+        // Match the scheduling boundary of a real database lookup so
+        // concurrency tests cannot pass only because this fake is synchronous.
+        tokio::task::yield_now().await;
+        let key = (house_id, application_id.to_owned());
+        let mut inner = self.household.lock().expect("memory store poisoned");
+        let reply = inner
             .pending
-            .get(&(house_id, application_id.to_owned()))
+            .get(&key)
             .cloned()
-            .unwrap_or(PendingReply::None))
+            .unwrap_or(PendingReply::None);
+        if matches!(reply, PendingReply::Ready(_)) {
+            inner.pending.remove(&key);
+        }
+        Ok(reply)
     }
 
     async fn mark_thinking(

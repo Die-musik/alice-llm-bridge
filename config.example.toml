@@ -10,6 +10,18 @@ codex_model = "gpt-5.6-luna"
 codex_effort = "low"
 homey_enabled = false
 
+# Optional delayed-answer return. Exact account/device identifiers and the
+# Yandex account token stay in service environment variables, never in TOML.
+[runtime.voice_return]
+enabled = false
+activation_name = "Искусственный интеллект"
+x_token_env = "YANDEX_STATION_X_TOKEN"
+
+[[runtime.voice_return.targets]]
+application_id_env = "ALICE_LIVING_ROOM_APPLICATION_ID"
+device_id_env = "YANDEX_LIVING_ROOM_DEVICE_ID"
+scenario_name = "Соня GPT — гостиная"
+
 [server]
 listen = "0.0.0.0:8080"
 # Legacy-mode allowlist. Household mode authorizes through house_members and

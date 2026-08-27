@@ -18,6 +18,7 @@ hex = { workspace = true }
 hmac = { workspace = true }
 llm-providers = { workspace = true }
 rand = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

@@ -6,8 +6,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bridge_core::{
-    ConversationStore, Engine, EngineConfig, FamilyRoster, HouseRuntime, HouseholdEngine,
-    HouseholdEngineConfig, HouseholdStore, Mode, ModelPreset, ModelRegistry, Profile, ProfileRole,
+    ConversationStore, DisabledVoiceReturn, Engine, EngineConfig, FamilyRoster, HouseRuntime,
+    HouseholdEngine, HouseholdEngineConfig, HouseholdStore, Mode, ModelPreset, ModelRegistry,
+    Profile, ProfileRole, VoiceReturn,
 };
 use llm_providers::{ChatProvider, OpenAiCompatClient};
 
@@ -18,12 +19,21 @@ pub fn build_household_engine(
     store: Arc<dyn HouseholdStore>,
     runtime: Arc<dyn HouseRuntime>,
 ) -> Result<HouseholdEngine, ConfigError> {
+    build_household_engine_with_voice_return(config, store, runtime, Arc::new(DisabledVoiceReturn))
+}
+
+pub fn build_household_engine_with_voice_return(
+    config: &AppConfig,
+    store: Arc<dyn HouseholdStore>,
+    runtime: Arc<dyn HouseRuntime>,
+    voice_return: Arc<dyn VoiceReturn>,
+) -> Result<HouseholdEngine, ConfigError> {
     if config.runtime.mode != RuntimeMode::HouseholdCodex {
         return Err(ConfigError::Invalid(
             "household engine requested while runtime mode is legacy".to_owned(),
         ));
     }
-    Ok(HouseholdEngine::new(
+    Ok(HouseholdEngine::with_voice_return(
         store,
         runtime,
         HouseholdEngineConfig {
@@ -31,6 +41,7 @@ pub fn build_household_engine(
             chunk_limit: config.runtime.chunk_limit,
             homey_enabled: config.runtime.homey_enabled,
         },
+        voice_return,
     ))
 }
 

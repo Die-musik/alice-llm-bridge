@@ -248,25 +248,29 @@ impl HouseholdStore for PgHouseholdStore {
         }
     }
 
-    async fn poll_pending(
+    async fn take_pending(
         &self,
         house_id: i64,
         application_id: &str,
     ) -> Result<PendingReply, HouseholdStoreError> {
+        let mut transaction = self.pool.begin().await.map_err(db_error)?;
         let row = sqlx::query(
             "SELECT status, nonce, ciphertext, key_version \
              FROM pending_replies \
-             WHERE house_id = $1 AND application_id = $2 AND expires_at > now()",
+             WHERE house_id = $1 AND application_id = $2 AND expires_at > now() \
+             FOR UPDATE",
         )
         .bind(house_id)
         .bind(application_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(db_error)?;
         let Some(row) = row else {
+            transaction.commit().await.map_err(db_error)?;
             return Ok(PendingReply::None);
         };
         if row.get::<String, _>("status") == "thinking" {
+            transaction.commit().await.map_err(db_error)?;
             return Ok(PendingReply::Thinking);
         }
         let text = self.open_text(
@@ -274,6 +278,13 @@ impl HouseholdStore for PgHouseholdStore {
             row.try_get("ciphertext").map_err(db_error)?,
             row.try_get("key_version").map_err(db_error)?,
         )?;
+        sqlx::query("DELETE FROM pending_replies WHERE house_id = $1 AND application_id = $2")
+            .bind(house_id)
+            .bind(application_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(db_error)?;
+        transaction.commit().await.map_err(db_error)?;
         Ok(PendingReply::Ready(text))
     }
 
@@ -577,7 +588,7 @@ mod tests {
 
         store.mark_thinking(house_id, "station").await.unwrap();
         assert_eq!(
-            store.poll_pending(house_id, "station").await.unwrap(),
+            store.take_pending(house_id, "station").await.unwrap(),
             PendingReply::Thinking
         );
         store
@@ -601,16 +612,20 @@ mod tests {
                 .any(|window| window == "секретный ответ".as_bytes())
         );
         assert_eq!(
-            store.poll_pending(house_id, "station").await.unwrap(),
+            store.take_pending(house_id, "station").await.unwrap(),
             PendingReply::Ready("секретный ответ".to_owned())
         );
 
+        store
+            .save_ready(house_id, "station", "ответ с истёкшим сроком")
+            .await
+            .unwrap();
         sqlx::query("UPDATE pending_replies SET expires_at = now() - interval '1 second'")
             .execute(&pool)
             .await
             .unwrap();
         assert_eq!(
-            store.poll_pending(house_id, "station").await.unwrap(),
+            store.take_pending(house_id, "station").await.unwrap(),
             PendingReply::None
         );
 
@@ -648,8 +663,41 @@ mod tests {
         );
 
         assert_eq!(
-            store.poll_pending(house_id + 1, "station").await.unwrap(),
+            store.take_pending(house_id + 1, "station").await.unwrap(),
             PendingReply::None
+        );
+    }
+
+    #[sqlx::test(migrations = "../../migrations")]
+    async fn concurrent_consumers_take_a_ready_reply_only_once(pool: sqlx::PgPool) {
+        let house_id = house(&pool, "Дом").await;
+        member(&pool, house_id, "OWNER").await;
+        surface(&pool, house_id, "OWNER", "station").await;
+        let store = store(pool);
+        store
+            .save_ready(house_id, "station", "готово")
+            .await
+            .unwrap();
+
+        let (first, second) = tokio::join!(
+            store.take_pending(house_id, "station"),
+            store.take_pending(house_id, "station")
+        );
+        let replies = [first.unwrap(), second.unwrap()];
+
+        assert_eq!(
+            replies
+                .iter()
+                .filter(|reply| matches!(reply, PendingReply::Ready(_)))
+                .count(),
+            1
+        );
+        assert_eq!(
+            replies
+                .iter()
+                .filter(|reply| matches!(reply, PendingReply::None))
+                .count(),
+            1
         );
     }
 

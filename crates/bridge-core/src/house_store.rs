@@ -10,7 +10,7 @@ pub struct HouseholdStoreError(pub String);
 pub trait HouseholdStore: Send + Sync {
     async fn resolve_surface(&self, identity: &SurfaceIdentity) -> StoreResult<SurfaceResolution>;
     async fn save_thread_id(&self, house_id: i64, thread_id: &str) -> StoreResult<()>;
-    async fn poll_pending(&self, house_id: i64, application_id: &str) -> StoreResult<PendingReply>;
+    async fn take_pending(&self, house_id: i64, application_id: &str) -> StoreResult<PendingReply>;
     async fn mark_thinking(&self, house_id: i64, application_id: &str) -> StoreResult<()>;
     async fn save_ready(&self, house_id: i64, application_id: &str, text: &str) -> StoreResult<()>;
     async fn clear_pending(&self, house_id: i64, application_id: &str) -> StoreResult<()>;
@@ -31,7 +31,7 @@ pub trait HouseholdStore: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::HouseholdStore;
-    use crate::household::{SurfaceIdentity, SurfaceResolution};
+    use crate::household::{PendingReply, SurfaceIdentity, SurfaceResolution};
     use crate::testing::MemoryHouseholdStore;
 
     #[tokio::test]
@@ -109,5 +109,32 @@ mod tests {
             resolution,
             SurfaceResolution::PairingRequired { spoken_code } if spoken_code.len() == 6
         ));
+    }
+
+    #[tokio::test]
+    async fn concurrent_consumers_take_a_ready_reply_only_once() {
+        let store = MemoryHouseholdStore::fixture();
+        store.save_ready(1, "station", "готово").await.unwrap();
+
+        let (first, second) = tokio::join!(
+            store.take_pending(1, "station"),
+            store.take_pending(1, "station")
+        );
+        let replies = [first.unwrap(), second.unwrap()];
+
+        assert_eq!(
+            replies
+                .iter()
+                .filter(|reply| matches!(reply, PendingReply::Ready(_)))
+                .count(),
+            1
+        );
+        assert_eq!(
+            replies
+                .iter()
+                .filter(|reply| matches!(reply, PendingReply::None))
+                .count(),
+            1
+        );
     }
 }
