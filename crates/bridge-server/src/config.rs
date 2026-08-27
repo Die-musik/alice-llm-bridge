@@ -53,6 +53,10 @@ pub struct RuntimeConfig {
     pub codex_socket: Option<PathBuf>,
     #[serde(default)]
     pub codex_cwd_root: Option<PathBuf>,
+    #[serde(default)]
+    pub codex_model: Option<String>,
+    #[serde(default)]
+    pub codex_effort: Option<String>,
     #[serde(default = "default_permission_profile_prefix")]
     pub permission_profile_prefix: String,
     #[serde(default = "default_chunk_limit")]
@@ -69,6 +73,8 @@ impl Default for RuntimeConfig {
             mode: RuntimeMode::Legacy,
             codex_socket: None,
             codex_cwd_root: None,
+            codex_model: None,
+            codex_effort: None,
             permission_profile_prefix: default_permission_profile_prefix(),
             chunk_limit: default_chunk_limit(),
             homey_enabled: false,
@@ -191,6 +197,21 @@ impl AppConfig {
                 return Err(ConfigError::Invalid(
                     "household permission_profile_prefix is invalid".to_owned(),
                 ));
+            }
+            match (
+                self.runtime.codex_model.as_deref(),
+                self.runtime.codex_effort.as_deref(),
+            ) {
+                (None, None) => {}
+                (Some(model), Some(effort))
+                    if !model.trim().is_empty()
+                        && matches!(effort, "minimal" | "low" | "medium" | "high" | "xhigh") => {}
+                _ => {
+                    return Err(ConfigError::Invalid(
+                        "household codex_model and supported codex_effort must be set together"
+                            .to_owned(),
+                    ));
+                }
             }
         }
         for preset in [&self.models.fast, &self.models.smart] {
@@ -328,6 +349,8 @@ codex_socket = "/run/alice-codex/app-server.sock"
 codex_cwd_root = "/srv/alice/houses"
 permission_profile_prefix = "alice-house-"
 chunk_limit = 850
+codex_model = "gpt-5.6-luna"
+codex_effort = "low"
 
 {}"#,
             sample()
@@ -335,7 +358,30 @@ chunk_limit = 850
         let config = AppConfig::from_toml(&household).unwrap();
         assert_eq!(config.runtime.mode, RuntimeMode::HouseholdCodex);
         assert_eq!(config.runtime.chunk_limit, 850);
+        assert_eq!(config.runtime.codex_model.as_deref(), Some("gpt-5.6-luna"));
+        assert_eq!(config.runtime.codex_effort.as_deref(), Some("low"));
         assert!(!config.runtime.homey_enabled);
+    }
+
+    #[test]
+    fn household_runtime_rejects_unknown_codex_effort() {
+        let household = format!(
+            r#"
+[runtime]
+mode = "household_codex"
+codex_socket = "/run/alice-codex/app-server.sock"
+codex_cwd_root = "/srv/alice/houses"
+codex_model = "gpt-5.6-luna"
+codex_effort = "instant"
+
+{}"#,
+            sample()
+        );
+
+        assert!(matches!(
+            AppConfig::from_toml(&household),
+            Err(ConfigError::Invalid(_))
+        ));
     }
 
     #[test]

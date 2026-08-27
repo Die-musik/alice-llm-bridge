@@ -50,11 +50,23 @@ pub(crate) fn thread_resume_params(
     })
 }
 
-pub(crate) fn turn_start_params(thread_id: &str, utterance: &str) -> Value {
-    json!({
+pub(crate) fn turn_start_params(
+    thread_id: &str,
+    utterance: &str,
+    model: Option<&str>,
+    effort: Option<&str>,
+) -> Value {
+    let mut params = json!({
         "threadId": thread_id,
         "input": [{"type": "text", "text": utterance}]
-    })
+    });
+    if let Some(model) = model {
+        params["model"] = json!(model);
+    }
+    if let Some(effort) = effort {
+        params["effort"] = json!(effort);
+    }
+    params
 }
 
 fn isolated_house_config(homey_connector: Option<&str>) -> Value {

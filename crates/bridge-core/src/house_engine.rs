@@ -9,7 +9,7 @@ use crate::{
     reply::{ContinuationDecision, ReplyShaper},
 };
 
-const STILL_THINKING: &str = "Я ещё думаю. Спросите меня через несколько секунд.";
+const STILL_THINKING: &str = "Я ещё думаю. Скажите «готово», и я отвечу.";
 
 #[derive(Debug, Clone, Copy)]
 pub struct HouseholdEngineConfig {
@@ -394,7 +394,7 @@ mod tests {
             engine
                 .respond(input("OWNER", "owner-station", "Сложный вопрос"))
                 .await,
-            HouseholdReply::Say("Я ещё думаю. Спросите меня через несколько секунд.".to_owned())
+            HouseholdReply::Say("Я ещё думаю. Скажите «готово», и я отвечу.".to_owned())
         );
         tokio::time::sleep(Duration::from_millis(60)).await;
 

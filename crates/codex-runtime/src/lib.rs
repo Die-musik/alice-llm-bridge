@@ -25,6 +25,8 @@ pub struct CodexRuntimeConfig {
     pub socket_path: PathBuf,
     pub cwd_root: PathBuf,
     pub permission_profile_prefix: String,
+    pub model: Option<String>,
+    pub effort: Option<String>,
     pub homey_enabled: bool,
 }
 
@@ -149,7 +151,15 @@ impl CodexRuntime {
     {
         let thread_id = self.start_thread_with(client, house, instructions).await?;
         let started = client
-            .request(TURN_START, turn_start_params(&thread_id, utterance))
+            .request(
+                TURN_START,
+                turn_start_params(
+                    &thread_id,
+                    utterance,
+                    self.config.model.as_deref(),
+                    self.config.effort.as_deref(),
+                ),
+            )
             .await?;
         let turn_id = required_string(&started, "/turn/id", "turn/start response has no turn id")?;
         let answer = client
@@ -197,7 +207,15 @@ impl CodexRuntime {
             ));
         }
         let started = client
-            .request(TURN_START, turn_start_params(thread_id, utterance))
+            .request(
+                TURN_START,
+                turn_start_params(
+                    thread_id,
+                    utterance,
+                    self.config.model.as_deref(),
+                    self.config.effort.as_deref(),
+                ),
+            )
             .await?;
         let turn_id = required_string(&started, "/turn/id", "turn/start response has no turn id")?;
         client

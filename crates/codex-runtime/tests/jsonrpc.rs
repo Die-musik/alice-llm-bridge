@@ -10,6 +10,20 @@ fn runtime() -> CodexRuntime {
         socket_path: PathBuf::from("/run/alice-codex/app-server.sock"),
         cwd_root: PathBuf::from("/srv/alice/houses"),
         permission_profile_prefix: "alice-house-".to_owned(),
+        model: None,
+        effort: None,
+        homey_enabled: false,
+    })
+    .unwrap()
+}
+
+fn fast_runtime() -> CodexRuntime {
+    CodexRuntime::new(CodexRuntimeConfig {
+        socket_path: PathBuf::from("/run/alice-codex/app-server.sock"),
+        cwd_root: PathBuf::from("/srv/alice/houses"),
+        permission_profile_prefix: "alice-house-".to_owned(),
+        model: Some("gpt-5.6-luna".to_owned()),
+        effort: Some("low".to_owned()),
         homey_enabled: false,
     })
     .unwrap()
@@ -20,6 +34,8 @@ fn homey_runtime() -> CodexRuntime {
         socket_path: PathBuf::from("/run/alice-codex/app-server.sock"),
         cwd_root: PathBuf::from("/srv/alice/houses"),
         permission_profile_prefix: "alice-house-".to_owned(),
+        model: None,
+        effort: None,
         homey_enabled: true,
     })
     .unwrap()
@@ -166,7 +182,7 @@ async fn chat_only_start_does_not_enable_any_mcp_server() {
 #[tokio::test]
 async fn first_turn_starts_on_the_thread_start_connection_without_resume() {
     let (client, server) = tokio::io::duplex(32 * 1024);
-    let runtime = runtime();
+    let runtime = fast_runtime();
     let task = tokio::spawn(async move {
         runtime
             .start_thread_and_turn_on(client, &house(), "HOUSE INSTRUCTIONS", "Первый вопрос")
@@ -197,6 +213,8 @@ async fn first_turn_starts_on_the_thread_start_connection_without_resume() {
     let turn = read_message(&mut read).await;
     assert_eq!(turn["method"], "turn/start");
     assert_eq!(turn["params"]["threadId"], "thread-1");
+    assert_eq!(turn["params"]["model"], "gpt-5.6-luna");
+    assert_eq!(turn["params"]["effort"], "low");
     assert_eq!(
         turn["params"]["input"],
         json!([{"type": "text", "text": "Первый вопрос"}])
@@ -309,7 +327,7 @@ async fn start_thread_rejects_empty_thread_id() {
 #[tokio::test]
 async fn turn_resumes_thread_and_concatenates_only_matching_deltas() {
     let (client, server) = tokio::io::duplex(32 * 1024);
-    let runtime = runtime();
+    let runtime = fast_runtime();
     let task = tokio::spawn(async move {
         runtime
             .turn_on(client, &house(), "thread-1", "Привет")
@@ -337,6 +355,8 @@ async fn turn_resumes_thread_and_concatenates_only_matching_deltas() {
     let turn = read_message(&mut read).await;
     assert_eq!(turn["method"], "turn/start");
     assert_eq!(turn["params"]["threadId"], "thread-1");
+    assert_eq!(turn["params"]["model"], "gpt-5.6-luna");
+    assert_eq!(turn["params"]["effort"], "low");
     assert_eq!(
         turn["params"]["input"],
         json!([{"type": "text", "text": "Привет"}])
@@ -418,6 +438,8 @@ async fn command_and_file_approvals_are_declined() {
     )
     .await;
     let turn = read_message(&mut read).await;
+    assert!(turn["params"].get("model").is_none());
+    assert!(turn["params"].get("effort").is_none());
     write_message(
         &mut write,
         json!({"id": turn["id"], "result": {"turn": {"id": "turn-1"}}}),

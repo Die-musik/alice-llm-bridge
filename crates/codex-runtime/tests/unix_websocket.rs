@@ -95,6 +95,8 @@ async fn real_runtime_upgrades_the_unix_socket_to_websocket() {
         socket_path: socket_path.clone(),
         cwd_root: PathBuf::from("/srv/alice/houses"),
         permission_profile_prefix: "alice-house-".to_owned(),
+        model: None,
+        effort: None,
         homey_enabled: false,
     })
     .unwrap();

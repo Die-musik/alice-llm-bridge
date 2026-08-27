@@ -60,6 +60,8 @@ async fn main() -> anyhow::Result<()> {
                     .clone()
                     .expect("validated household codex_cwd_root"),
                 permission_profile_prefix: config.runtime.permission_profile_prefix.clone(),
+                model: config.runtime.codex_model.clone(),
+                effort: config.runtime.codex_effort.clone(),
                 homey_enabled: config.runtime.homey_enabled,
             })
             .context("invalid Codex runtime config")?;

@@ -6,6 +6,8 @@ codex_socket = "/run/alice-codex/app-server.sock"
 codex_cwd_root = "/srv/alice/houses"
 permission_profile_prefix = "alice-house-"
 chunk_limit = 850
+codex_model = "gpt-5.6-luna"
+codex_effort = "low"
 homey_enabled = false
 
 [server]
